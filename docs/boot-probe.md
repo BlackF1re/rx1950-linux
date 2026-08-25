@@ -5,9 +5,15 @@ session. It does not modify Windows Mobile or the internal flash.
 
 ## Expected signals
 
+The boot card contains a HaRET build that knows the RX1950/S3C2442 machine and
+relocates the image by `0x90000`, away from the Windows Mobile memory area.
+Before testing a new card, run `haret.exe` and confirm that `haretlog.txt`
+identifies `RX1950/s3c2442`; a generic Samsung identification means the wrong
+executable is still being used.
+
 The green LED is also forced by the zImage entry code, before decompression and
-before any Linux board callback. If it never lights while `haretlog.txt` ends
-with `Go Go Go...`, execution did not reach the image entry instruction.
+before any Linux board callback. If it never lights while the correct HaRET log
+ends with `Go Go Go...`, execution did not reach the image entry instruction.
 
 After HaRET reports `booting Linux`, observe the LEDs for 20 seconds, then wait
 at least 90 seconds without pressing the reset button. The final kernel-only
