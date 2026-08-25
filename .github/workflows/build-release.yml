@@ -184,5 +184,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.plan.outputs.version }}
+        shell: bash
         run: |
-          gh release create "$VERSION" release/rx1950-linux-sd.img.xz release/SHA256SUMS release/provenance.txt release/zImage release/startup.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "rx1950-linux $VERSION" --generate-notes
+          image="$(find release -type f -name rx1950-linux-sd.img.xz -print -quit)"
+          checksums="$(find release -type f -name SHA256SUMS -print -quit)"
+          provenance="$(find release -type f -name provenance.txt -print -quit)"
+          kernel="$(find release -type f -name zImage -print -quit)"
+          startup="$(find release -type f -name startup.txt -print -quit)"
+          test -n "$image" && test -n "$checksums" && test -n "$provenance" && test -n "$kernel" && test -n "$startup"
+          gh release create "$VERSION" "$image" "$checksums" "$provenance" "$kernel" "$startup" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "rx1950-linux $VERSION" --generate-notes
