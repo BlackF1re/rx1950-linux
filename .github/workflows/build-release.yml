@@ -21,23 +21,24 @@ permissions:
   contents: read
 
 concurrency:
-  group: rx1950-linux-build-${{ github.ref }}
+  group: rx1950-linux-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  BUILD_ID: ${{ github.sha }}
 
 jobs:
   plan:
     name: Plan build
     runs-on: ubuntu-24.04
     outputs:
-      build_id: ${{ steps.meta.outputs.build_id }}
+      id: ${{ steps.meta.outputs.id }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - id: meta
-        shell: bash
-        run: |
-          echo "build_id=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "id=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
 
   rootfs:
     name: Build root filesystem
@@ -46,34 +47,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential bc cpio rsync unzip wget file
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc cpio rsync file curl
       - name: Build rootfs
         run: ./scripts/build.sh rootfs
-      - name: Upload rootfs handoff
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: rx1950-rootfs-${{ needs.plan.outputs.build_id }}
-          path: output/rootfs.tar.zst
+          name: rx1950-rootfs-${{ needs.plan.outputs.id }}
+          path: output/
 
   kernel:
-    name: Build Linux kernel
+    name: Build kernel
     needs: plan
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc flex bison libssl-dev libelf-dev
       - name: Build kernel
         run: ./scripts/build.sh kernel
-      - name: Upload kernel handoff
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: rx1950-kernel-${{ needs.plan.outputs.build_id }}
-          path: output/kernel.tar.zst
+          name: rx1950-kernel-${{ needs.plan.outputs.id }}
+          path: output/
 
   assemble:
     name: Assemble SD image
@@ -82,23 +77,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install image tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dosfstools e2fsprogs parted
-      - name: Download rootfs
-        uses: actions/download-artifact@v4
+        run: sudo apt-get update && sudo apt-get install -y dosfstools e2fsprogs parted
+      - uses: actions/download-artifact@v4
         with:
-          pattern: rx1950-rootfs-*
+          pattern: rx1950-*
           merge-multiple: true
-      - name: Download kernel
-        uses: actions/download-artifact@v4
-        with:
-          pattern: rx1950-kernel-*
-          merge-multiple: true
-      - name: Create SD image
+      - name: Assemble image
         run: ./scripts/build.sh image
-      - name: Upload Rufus image
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: rx1950-linux-sd-image-${{ needs.plan.outputs.build_id }}
+          name: rx1950-linux-sd-image-${{ needs.plan.outputs.id }}
           path: output/*.img
