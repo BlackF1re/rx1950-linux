@@ -1,0 +1,47 @@
+#!/bin/sh
+# Persistent, device-visible milestones for a headless first boot.
+
+set -u
+
+BOOT_DEVICE=/dev/mmcblk0p1
+BOOT_MOUNT=/mnt/boot
+LOG_FILE=${BOOT_MOUNT}/probe.log
+
+record() {
+    message="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown-time) $*"
+    printf '%s\n' "$message" > /dev/kmsg 2>/dev/null || true
+    printf '%s\n' "$message" >&2
+
+    mkdir -p "$BOOT_MOUNT"
+    if ! grep -q " $BOOT_MOUNT " /proc/mounts; then
+        mount -t vfat -o rw "$BOOT_DEVICE" "$BOOT_MOUNT" 2>/dev/null || true
+    fi
+    if grep -q " $BOOT_MOUNT " /proc/mounts; then
+        printf '%s\n' "$message" >> "$LOG_FILE"
+        sync "$LOG_FILE" 2>/dev/null || sync
+    fi
+}
+
+set_led() {
+    led="$1"
+    value="$2"
+    brightness="/sys/class/leds/$led/brightness"
+    [ -w "$brightness" ] && printf '%s\n' "$value" > "$brightness"
+}
+
+case "${1:-}" in
+    early-userspace)
+        set_led Green 1
+        record "early-userspace-reached"
+        ;;
+    rootfs-ready)
+        set_led Blue 1
+        record "rootfs-ready"
+        ;;
+    usb-network-ready|usb0-unavailable)
+        record "$1"
+        ;;
+    *)
+        record "unknown-probe-event:${1:-none}"
+        ;;
+esac

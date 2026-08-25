@@ -40,13 +40,11 @@ has a documented support state and an on-device acceptance test.
 5. A signed feed of architecture-compatible `opkg` packages, with the base
    image kept intentionally modest.
 
-The current engineering image provides the bootable base, kernel, serial
-console, USB recovery networking, package manager and an experimental Matchbox
-handheld session. It configures the USB client link as `192.168.7.2/24` and
-starts SSH automatically; the first-boot credentials are `root` / `rx1950` and
-must be changed immediately. Release notes identify each hardware feature as
-verified on the device, available but requiring local configuration, or still
-under active work.
+The current engineering image is a hardware boot probe, not a usable release.
+It writes explicit userspace and USB milestones to the Windows-readable FAT
+partition and holds the graphical session back until the framebuffer has been
+verified. See [the first-boot probe guide](docs/boot-probe.md) before writing an
+image to a card.
 
 The full, testable inventory is in [the hardware support matrix](docs/hardware.md).
 The boot and storage contract is in [the architecture guide](docs/architecture.md),

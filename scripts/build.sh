@@ -72,7 +72,7 @@ build_kernel() {
     mkdir -p "${out}"
     cp "${ROOT_DIR}/kernel/rx1950_defconfig" "${out}/.config"
     sed -i \
-        -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=ttySAC0,115200n8 console=tty0"|' \
+        -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=ttySAC0,115200n8 console=tty0 loglevel=8 ignore_loglevel consoleblank=0 printk.time=1"|' \
         -e '/^CONFIG_CMDLINE_FORCE=/d' \
         "${out}/.config"
     printf '%s\n' 'CONFIG_CMDLINE_FORCE=y' >> "${out}/.config"
@@ -128,6 +128,7 @@ assemble_image() {
         printf 'kernel=%s\n' "${KERNEL_VERSION}"
         printf 'haret-sha256=%s\n' "${HARET_SHA256}"
         printf 'rootfs=ext4\n'
+        printf 'profile=boot-probe\n'
         printf 'seed-image-bytes=%s\n' "${image_size}"
     } > "${OUTPUT_DIR}/provenance.txt"
 }

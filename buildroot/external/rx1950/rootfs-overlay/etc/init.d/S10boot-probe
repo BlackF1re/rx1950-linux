@@ -1,0 +1,9 @@
+#!/bin/sh
+# This runs before networking and any graphical session.
+
+case "$1" in
+    start)
+        /usr/sbin/rx1950-boot-probe early-userspace
+        /usr/sbin/rx1950-boot-probe rootfs-ready
+        ;;
+esac

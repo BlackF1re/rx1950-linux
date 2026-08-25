@@ -6,7 +6,12 @@ export PATH
 
 case "$1" in
     start)
-        ip link set usb0 up 2>/dev/null || exit 0
-        ip address add 192.168.7.2/24 dev usb0 2>/dev/null || true
+        if ip link show usb0 >/dev/null 2>&1; then
+            ip link set usb0 up
+            ip address replace 192.168.7.2/24 dev usb0
+            /usr/sbin/rx1950-boot-probe usb-network-ready
+        else
+            /usr/sbin/rx1950-boot-probe usb0-unavailable
+        fi
         ;;
 esac
