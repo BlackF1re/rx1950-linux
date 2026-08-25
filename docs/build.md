@@ -55,9 +55,10 @@ contain the compressed form and:
 ## Publishing
 
 Pushes to `main` create only a sealed Actions artifact. To create a GitHub
-release, run **Build & Release** manually, enable publishing and provide a
-version tag. The publication job consumes the output from the same verified
-assembly job; it never rebuilds the image independently.
+release, run **Build & Release** manually from `main` and enable publishing.
+The workflow computes the next engineering version itself and the publication
+job consumes the output from the same verified assembly job; it never rebuilds
+the image independently.
 
 Write the decompressed raw image to the whole SD-card device, not to a file
 inside a preformatted partition. On first Linux boot the root partition and

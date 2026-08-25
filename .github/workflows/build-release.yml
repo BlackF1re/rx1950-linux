@@ -18,10 +18,6 @@ on:
         required: true
         type: boolean
         default: false
-      version:
-        description: Release tag, required only when publishing
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -39,12 +35,41 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       id: ${{ steps.meta.outputs.id }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - id: meta
-        run: echo "id=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          echo "id=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+          latest_major=-1
+          latest_minor=-1
+          latest_patch=-1
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-engineer$ ]]; then
+              major="${BASH_REMATCH[1]}"
+              minor="${BASH_REMATCH[2]}"
+              patch="${BASH_REMATCH[3]}"
+              if (( major > latest_major ||
+                    (major == latest_major && minor > latest_minor) ||
+                    (major == latest_major && minor == latest_minor && patch > latest_patch) )); then
+                latest_major="$major"
+                latest_minor="$minor"
+                latest_patch="$patch"
+              fi
+            fi
+          done < <(git tag --list)
+
+          if (( latest_major < 0 )); then
+            version="0.1.0-engineer"
+          else
+            version="${latest_major}.${latest_minor}.$((latest_patch + 1))-engineer"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Next engineering release: ${version}" >> "$GITHUB_STEP_SUMMARY"
       - name: Validate source contract
         run: bash scripts/validate.sh source
 
@@ -143,11 +168,14 @@ jobs:
   publish:
     name: Publish release
     needs: [plan, assemble]
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && inputs.version != ''
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: rx1950-linux-${{ needs.plan.outputs.id }}
@@ -155,6 +183,6 @@ jobs:
       - name: Publish verified payload
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          gh release create "$VERSION" release/rx1950-linux-sd.img.xz release/SHA256SUMS release/provenance.txt release/zImage release/startup.txt --repo "$GITHUB_REPOSITORY" --title "rx1950-linux $VERSION" --generate-notes
+          gh release create "$VERSION" release/rx1950-linux-sd.img.xz release/SHA256SUMS release/provenance.txt release/zImage release/startup.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "rx1950-linux $VERSION" --generate-notes
