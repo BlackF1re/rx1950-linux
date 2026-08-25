@@ -1,21 +1,39 @@
-# HP iPAQ rx1950 hardware
+# Hardware support matrix
 
-Target:
+## Platform
 
-- SoC: Samsung S3C2442
-- CPU: ARM920T
-- Display: 240x320 TFT
-- Touch: resistive
-- Storage: SD boot target
+| Feature | Target |
+| --- | --- |
+| CPU | Samsung S3C2442 ARM920T |
+| Memory | Internal RAM and SD based storage |
+| Boot | HaRET SD boot |
+| Display | TFT LCD framebuffer |
+| Input | Resistive touchscreen |
+| Storage | SD/MMC |
+| Audio | S3C24xx audio with UDA1380 support |
+| Network | Integrated wireless adapter |
+| Power | Battery monitoring and suspend/resume |
 
-Existing Linux support:
+## Driver priorities
 
-- CONFIG_MACH_RX1950
-- S3C24xx platform support
-- rx1950 machine description
+### First stage
 
-Research targets:
+- kernel boot
+- framebuffer console
+- storage
+- input
 
-- TI TNETW1100 Wi-Fi firmware and driver
-- touchscreen controller
-- remaining proprietary firmware
+### Second stage
+
+- wireless networking
+- audio
+- battery information
+- suspend/resume
+
+### Third stage
+
+- graphical environment
+- hardware acceleration research
+- additional peripherals
+
+Firmware components will be documented separately when their exact hardware requirements are confirmed.

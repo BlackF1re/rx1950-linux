@@ -1,6 +1,11 @@
 #!/bin/sh
-set -e
+set -eu
 
-mkdir -p output
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+OUTPUT_DIR="$ROOT_DIR/output"
 
-echo "rx1950-linux build placeholder"
+mkdir -p "$OUTPUT_DIR"
+
+echo "Preparing rx1950-linux build environment"
+
+echo "Build stages will be added as kernel and root filesystem integration progresses"

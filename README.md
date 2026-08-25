@@ -2,37 +2,66 @@
 
 Modern lightweight Linux distribution for HP iPAQ rx1950.
 
-## Goals
+## Project goal
 
-- Boot from SD card without modifying Windows Mobile 6.1
-- Modern embedded Linux userspace
-- Small reproducible builds
-- Package management
-- htop, Python 3, SSH and framebuffer support
+rx1950-linux aims to provide a complete, reproducible Linux distribution for the HP iPAQ rx1950 while preserving the original Windows Mobile 6.1 installation. The primary boot path uses an SD card and leaves the internal firmware untouched.
 
-## Architecture
+The target is a practical pocket Linux computer with:
 
-```
-SD card
-├── FAT32
-│   ├── haret.exe
-│   ├── default.txt
-│   └── zImage
-└── Linux rootfs
-    ├── BusyBox
-    ├── opkg
-    ├── Python 3
-    └── applications
-```
+- SD card boot through the existing boot chain
+- Linux kernel with rx1950 hardware support
+- framebuffer display support
+- touchscreen input
+- power management
+- wireless networking
+- sound support
+- SSH access
+- package management
+- Python 3 runtime
+- command line and lightweight graphical environments
 
 ## Hardware target
 
-- HP iPAQ rx1950
-- Samsung S3C2442 ARM920T
-- 240x320 LCD
-- Resistive touchscreen
-- SD boot via HaRET
+| Component | Target |
+| --- | --- |
+| Device | HP iPAQ rx1950 |
+| SoC | Samsung S3C2442 |
+| CPU | ARM920T ARMv4T |
+| Display | 240x320 TFT LCD |
+| Input | Resistive touchscreen |
+| Storage | SD card root filesystem |
+| Boot | HaRET based SD boot |
+| Firmware | Windows Mobile 6.1 preserved |
 
-## Build
+## Build architecture
 
-GitHub Actions produces a raw SD image artifact suitable for writing with Rufus.
+```
+SD image
+├── FAT boot partition
+│   ├── HaRET loader
+│   ├── kernel image
+│   └── boot configuration
+│
+└── Linux root filesystem
+    ├── base system
+    ├── packages
+    ├── applications
+    └── user data
+```
+
+## Build system
+
+The project uses automated GitHub Actions builds to generate a raw SD card image suitable for writing with tools such as Rufus.
+
+## Development stages
+
+1. Reproducible build pipeline
+2. Kernel and boot image generation
+3. Minimal userspace
+4. Hardware enablement
+5. Package repository
+6. Lightweight graphical environment
+
+## Documentation
+
+See the `docs` directory for architecture and hardware notes.
