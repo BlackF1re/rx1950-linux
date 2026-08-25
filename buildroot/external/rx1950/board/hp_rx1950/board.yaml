@@ -1,0 +1,7 @@
+name: rx1950
+
+format: 1
+
+target: hp-ipaq-rx1950
+architecture: arm920t
+boot: haret
