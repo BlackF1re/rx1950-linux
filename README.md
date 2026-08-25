@@ -15,7 +15,7 @@ has a documented support state and an on-device acceptance test.
   untouched. Removing the card restores the original boot path.
 - **Actual target:** Samsung S3C2442 at 300 MHz, ARM920T / ARMv4T, 32 MiB RAM,
   64 MiB ROM, QVGA 240x320 display, and SD/SDIO/MMC slot.
-- **Small but extensible:** BusyBox-based base system, read-write ext2 data
+- **Small but extensible:** BusyBox-based base system, read-write ext4 data
   partition, SSH administration, and a repository-backed `opkg` package
   manager. The package manager and its trust policy are part of the release,
   not an afterthought.
@@ -29,8 +29,8 @@ has a documented support state and an on-device acceptance test.
 ## Target for the first usable release
 
 1. A FAT boot partition containing HaRET, kernel and a generated boot script.
-2. A Linux ext2 root partition which remains independent from the Windows
-   Mobile-readable boot volume.
+2. A Linux ext4 root partition which remains independent from the Windows
+   Mobile-readable boot volume and grows to the end of the card at first boot.
 3. Console, QVGA framebuffer, touchscreen, physical buttons, SD storage,
    backlight, battery status, audio, USB gadget, RTC, infrared and WLAN where
    their device-specific drivers pass on-device tests.
@@ -64,7 +64,7 @@ and [the delivery plan](docs/goals.md) defines the completion criteria.
 ## Build and release status
 
 Every push to `main` builds the root filesystem and kernel independently,
-verifies their hand-off digests, assembles a 96 MiB SD-card image and publishes
+verifies their hand-off digests, assembles a content-sized SD-card image and publishes
 the sealed payload as an Actions artifact. A maintainer can then run the same
 workflow manually with publishing enabled to create a GitHub release containing
 the image, checksum, provenance, kernel and HaRET startup script.

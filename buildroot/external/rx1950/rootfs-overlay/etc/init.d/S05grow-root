@@ -1,0 +1,75 @@
+#!/bin/sh
+# Grow the release seed partition to the end of the SD card before services start.
+
+set -u
+
+readonly DISK=/dev/mmcblk0
+readonly ROOT=/dev/mmcblk0p2
+readonly BOOT_START=2048
+readonly BOOT_SECTORS=32768
+readonly ROOT_START=34816
+readonly MARKER=/var/lib/rx1950/root-expanded
+
+log() {
+    printf '%s\n' "rx1950-grow-root: $*" > /dev/kmsg 2>/dev/null || true
+    printf '%s\n' "rx1950-grow-root: $*" >&2
+}
+
+fail() {
+    log "$*; leaving the current root filesystem unchanged"
+    exit 0
+}
+
+read_sector_count() {
+    cat "$1/size" 2>/dev/null
+}
+
+[ -b "${DISK}" ] && [ -b "${ROOT}" ] || exit 0
+command -v sfdisk >/dev/null 2>&1 || fail "sfdisk is unavailable"
+command -v resize2fs >/dev/null 2>&1 || fail "resize2fs is unavailable"
+command -v partx >/dev/null 2>&1 || fail "partx is unavailable"
+
+grep -q "^${ROOT} / " /proc/mounts || fail "root is not ${ROOT}"
+boot_start="$(cat /sys/class/block/mmcblk0p1/start 2>/dev/null)" || fail "cannot read boot partition"
+boot_size="$(read_sector_count /sys/class/block/mmcblk0p1)" || fail "cannot read boot size"
+root_start="$(cat /sys/class/block/mmcblk0p2/start 2>/dev/null)" || fail "cannot read root partition"
+disk_size="$(read_sector_count /sys/class/block/mmcblk0)" || fail "cannot read card size"
+root_size="$(read_sector_count /sys/class/block/mmcblk0p2)" || fail "cannot read root size"
+
+[ "${boot_start}" = "${BOOT_START}" ] || fail "unexpected boot partition start"
+[ "${boot_size}" = "${BOOT_SECTORS}" ] || fail "unexpected boot partition size"
+[ "${root_start}" = "${ROOT_START}" ] || fail "unexpected root partition start"
+[ "${disk_size}" -gt "${ROOT_START}" ] || fail "card is too small"
+expected_size=$((disk_size - ROOT_START))
+
+if [ "${root_size}" -lt "${expected_size}" ]; then
+    log "extending the root partition to ${expected_size} sectors"
+	if ! sfdisk --no-reread --force "${DISK}" <<-EOF
+	label: dos
+	unit: sectors
+
+	${DISK}p1 : start=${BOOT_START}, size=${BOOT_SECTORS}, type=c, bootable
+	${ROOT} : start=${ROOT_START}, type=83
+	EOF
+	then
+		fail "could not extend the root partition"
+	fi
+
+    if ! partx --update --nr 2 "${DISK}"; then
+        log "the kernel will reread the enlarged partition after one automatic reboot"
+        sync
+        reboot -f
+        exit 0
+    fi
+fi
+
+root_size="$(read_sector_count /sys/class/block/mmcblk0p2)" || fail "cannot reread root size"
+[ "${root_size}" = "${expected_size}" ] || fail "kernel did not accept the enlarged partition"
+
+if resize2fs "${ROOT}"; then
+    mkdir -p "$(dirname "${MARKER}")"
+    printf 'sectors=%s\n' "${expected_size}" > "${MARKER}"
+    log "root filesystem now uses the full SD card"
+else
+    fail "resize2fs failed"
+fi

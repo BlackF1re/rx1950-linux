@@ -13,7 +13,8 @@ the device's internal ROM or NAND. A user must be able to recover the original
 Windows Mobile boot simply by removing the card and resetting the device.
 
 The shipped image must fit a 1 GiB or larger SD card, expose a FAT boot volume
-that Windows Mobile can read, use an ext2 Linux data volume, and retain enough
+that Windows Mobile can read, use an ext4 Linux data volume that grows to the
+full SD-card capacity on first boot, and retain enough
 free space and RAM headroom for interactive use on a 32 MiB machine. The
 default image is minimal; applications are added through the project package
 feed using `opkg`.
@@ -24,7 +25,7 @@ feed using `opkg`.
 | --- | --- |
 | Reproducible build | Clean, pinned-source build on GitHub Actions; manifests, SHA-256 sums and tool versions are saved with the artifact. |
 | Boot safety | HaRET starts the exact kernel in the image; removing the SD card demonstrably returns to Windows Mobile. No internal flash write is issued by any documented path. |
-| Storage | FAT boot files are readable under Windows Mobile; SD card detection, read/write, remount and unclean-removal recovery pass. |
+| Storage | FAT boot files are readable under Windows Mobile; first boot expands only the expected root partition to the card end; SD detection, read/write, remount and unclean-removal recovery pass. |
 | Base system | `init`, console login, UTC RTC, writable persistent data, SSH and package database work after a cold boot. |
 | Hardware | Each applicable item in the hardware matrix has an on-device result. Unverified items stay marked experimental or unavailable. |
 | Power | Battery reporting, controlled shutdown, display blanking and suspend/resume are tested independently. A failure must leave a documented safe recovery path. |

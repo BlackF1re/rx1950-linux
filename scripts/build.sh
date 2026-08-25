@@ -89,11 +89,11 @@ prepare_haret() {
 }
 
 assemble_image() {
-    require dd; require parted; require mkfs.vfat; require mcopy; require debugfs; require e2fsck; require sha256sum
+    require dd; require parted; require mkfs.vfat; require mcopy; require debugfs; require e2fsck; require sha256sum; require xz
     [[ -f "${OUTPUT_DIR}/zImage" ]] || die "kernel artifact is not available"
     [[ -f "${OUTPUT_DIR}/rootfs.ext2" ]] || die "root filesystem artifact is not available"
 
-    local haret bootfs image root_start
+    local haret bootfs image root_start rootfs_size image_size
     haret="$(prepare_haret)"
     bootfs="${OUTPUT_DIR}/boot.fat"
     image="${OUTPUT_DIR}/rx1950-linux-sd.img"
@@ -109,16 +109,26 @@ assemble_image() {
 
     e2fsck -fp "${OUTPUT_DIR}/rootfs.ext2"
 
-    truncate --size 96M "${image}"
-    parted --script "${image}" mklabel msdos mkpart primary fat16 1MiB 17MiB mkpart primary ext2 17MiB 100% set 1 boot on
+    rootfs_size="$(stat --format='%s' "${OUTPUT_DIR}/rootfs.ext2")"
+    test $((rootfs_size % 512)) -eq 0 || die "root filesystem is not sector-aligned"
+    image_size=$((root_start * 512 + rootfs_size))
+    rm -f "${image}.xz"
+    truncate --size "${image_size}" "${image}"
+    parted --script "${image}" mklabel msdos mkpart primary fat16 1MiB 17MiB mkpart primary ext4 17MiB 100% set 1 boot on
     dd if="${bootfs}" of="${image}" bs=512 seek=2048 conv=notrunc status=none
     dd if="${OUTPUT_DIR}/rootfs.ext2" of="${image}" bs=512 seek="${root_start}" conv=notrunc status=none
-    sha256sum "${image}" > "${OUTPUT_DIR}/SHA256SUMS"
+    xz --keep --force --threads=0 --check=crc32 "${image}"
+    (
+        cd "${OUTPUT_DIR}"
+        sha256sum rx1950-linux-sd.img rx1950-linux-sd.img.xz > SHA256SUMS
+    )
     {
         printf 'build=%s\n' "${BUILD_ID:-local}"
         printf 'buildroot=%s\n' "${BUILDROOT_VERSION}"
         printf 'kernel=%s\n' "${KERNEL_VERSION}"
         printf 'haret-sha256=%s\n' "${HARET_SHA256}"
+        printf 'rootfs=ext4\n'
+        printf 'seed-image-bytes=%s\n' "${image_size}"
     } > "${OUTPUT_DIR}/provenance.txt"
 }
 

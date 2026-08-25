@@ -50,7 +50,7 @@ in a release claim.
 | --- | --- | --- |
 | HaRET launch | Planned | Launch from Windows Mobile with generated configuration; verify kernel command line and RAM addresses. |
 | FAT boot partition | Planned | Windows Mobile can read all shipped boot files and checksum manifest. |
-| Linux root partition | Planned | ext2 mounts read-write and preserves the boot partition; a larger-card layout and growth path are tested separately. |
+| Linux root partition | Experimental | ext4 mounts read-write, preserves the boot partition and safely grows to the end of a larger card on first boot. Verify the full path on physical media. |
 | Console and SSH | Experimental | Local framebuffer terminal works; remote SSH works after cold boot over the USB RNDIS link and WLAN once that driver is validated. |
 | Package management | Planned | `opkg update`, signature check, install, remove and recovery from interrupted transaction. |
 | Graphical session | Experimental | The image includes the Matchbox session (TinyX, launcher, panel and on-screen keyboard); verify QVGA startup, stylus, physical navigation, idle RAM and clean exit on the device. |

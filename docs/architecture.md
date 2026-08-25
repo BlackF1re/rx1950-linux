@@ -14,13 +14,21 @@ HaRET from the SD card FAT partition
 Pinned rx1950 compatibility kernel
         |
         v
-Linux root filesystem on the SD card ext2 partition
+Linux root filesystem on the SD card ext4 partition
 ```
 
 HaRET receives only generated, release-owned files: its executable, boot
 configuration, kernel, optional initramfs and checksum manifest. It must never
 be configured to write the internal flash. The image layout keeps the boot
 partition separately mountable from Windows Mobile and Linux.
+
+The raw release image has no reserved tail. It contains a fixed 16 MiB FAT16
+boot partition and the smallest ext4 seed filesystem that holds the selected
+userspace. At first boot, an early guarded service verifies the expected
+layout, extends only the second SD-card partition to the card end, and grows
+the mounted ext4 filesystem. If the running kernel cannot reread the changed
+partition table, it performs one immediate reboot before the filesystem grow.
+It never operates on internal storage or an unexpected partition layout.
 
 ## Runtime model
 

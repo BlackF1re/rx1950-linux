@@ -133,6 +133,7 @@ jobs:
           name: rx1950-linux-${{ needs.plan.outputs.id }}
           path: |
             output/rx1950-linux-sd.img
+            output/rx1950-linux-sd.img.xz
             output/SHA256SUMS
             output/provenance.txt
             output/zImage
@@ -156,4 +157,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
-          gh release create "$VERSION" release/rx1950-linux-sd.img release/SHA256SUMS release/provenance.txt release/zImage release/startup.txt --repo "$GITHUB_REPOSITORY" --title "rx1950-linux $VERSION" --generate-notes
+          gh release create "$VERSION" release/rx1950-linux-sd.img.xz release/SHA256SUMS release/provenance.txt release/zImage release/startup.txt --repo "$GITHUB_REPOSITORY" --title "rx1950-linux $VERSION" --generate-notes
