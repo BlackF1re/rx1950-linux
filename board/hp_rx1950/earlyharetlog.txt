@@ -1,0 +1,1 @@
+This file enables HaRET's own early boot log. HaRET replaces its contents on launch.

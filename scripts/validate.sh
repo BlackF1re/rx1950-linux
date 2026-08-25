@@ -13,7 +13,12 @@ case "${1:-source}" in
     test -s "${ROOT_DIR}/kernel/rx1950_defconfig"
     test -s "${ROOT_DIR}/kernel/patches/0001-rx1950-add-early-led-boot-markers.patch"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup.txt"
+    test -s "${ROOT_DIR}/board/hp_rx1950/earlyharetlog.txt"
+    grep -qx 'set RAMADDR 0x30000000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
+    grep -qx 'set RAMSIZE 32\*1024\*1024' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set MTYPE 952' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
+    grep -qx 'set FBDURINGBOOT 0' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
+    grep -qx 'set KERNELCRC 1' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S10boot-probe"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
     git -C "${ROOT_DIR}" diff --check
