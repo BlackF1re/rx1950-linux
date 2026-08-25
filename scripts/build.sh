@@ -120,7 +120,6 @@ assemble_image() {
     mkfs.vfat -F 16 -n RX1950BOOT "${bootfs}"
     mcopy -i "${bootfs}" "${haret}" ::haret.exe
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/startup.txt" ::startup.txt
-    mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/earlyharetlog.txt" ::earlyharetlog.txt
     mcopy -i "${bootfs}" "${OUTPUT_DIR}/zImage" ::zImage
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/README.txt" ::README.txt
 
