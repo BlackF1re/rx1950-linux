@@ -30,6 +30,10 @@ No downloaded source or executable is used until its recorded checksum matches.
 6. Verify the partition geometry, checksum, compressed form and exact embedded
    root filesystem, then retain provenance with the sealed payload.
 
+The generated HaRET script explicitly supplies machine type `952`
+(`MACH_RX1950`). HaRET cannot infer this legacy board identifier from Windows
+Mobile; omitting it stops the boot before the kernel is loaded.
+
 The root filesystem and kernel build in parallel. The first Buildroot run
 builds its hermetic ARM/musl cross-toolchain and is therefore intentionally the
 longest stage. Actions caches both verified source downloads and the complete

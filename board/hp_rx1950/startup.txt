@@ -1,4 +1,5 @@
 # HaRET startup script for the SD card root directory.
+set MTYPE 952
 set KERNEL zImage
 set CMDLINE "root=/dev/mmcblk0p2 rootwait rw console=ttySAC0,115200n8 console=tty0"
 boot
