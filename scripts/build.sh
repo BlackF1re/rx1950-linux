@@ -49,6 +49,21 @@ prepare_kernel() {
     printf '%s\n' "${source}"
 }
 
+apply_kernel_patches() {
+    local source="$1" patch_file
+    require patch
+    for patch_file in "${ROOT_DIR}"/kernel/patches/*.patch; do
+        [[ -e "${patch_file}" ]] || continue
+        if patch --directory="${source}" --strip=1 --dry-run --forward --batch < "${patch_file}"; then
+            patch --directory="${source}" --strip=1 --forward --batch < "${patch_file}"
+        elif patch --directory="${source}" --strip=1 --dry-run --reverse --batch < "${patch_file}"; then
+            : # The source tree is already patched from a previous local build.
+        else
+            die "cannot apply kernel patch ${patch_file}"
+        fi
+    done
+}
+
 build_rootfs() {
     require make
     chmod +x "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/post-build.sh"
@@ -67,6 +82,7 @@ build_kernel() {
     require "${CROSS_COMPILE}gcc"
     local source
     source="$(prepare_kernel)"
+    apply_kernel_patches "${source}"
     local out="${BUILD_DIR}/kernel-output"
     rm -rf "${out}"
     mkdir -p "${out}"
