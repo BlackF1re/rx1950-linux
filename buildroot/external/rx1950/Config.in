@@ -1,0 +1,11 @@
+menu "rx1950 Linux configuration"
+
+comment "HP iPAQ rx1950 target"
+
+config BR2_PACKAGE_RX1950_BASE
+	bool "rx1950 base configuration"
+	default y
+	help
+		Base configuration for HP iPAQ rx1950.
+
+endmenu
