@@ -1,0 +1,10 @@
+# Build configuration
+
+## Target
+
+- Architecture: ARM
+- CPU family: ARM920T
+- Platform: Samsung S3C2442
+- Device: HP iPAQ rx1950
+
+The initial target is a minimal userspace with framebuffer and networking support.
