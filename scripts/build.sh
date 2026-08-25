@@ -30,15 +30,22 @@ build_kernel() {
     tar -czf "$OUTPUT_DIR/kernel.tar.gz" -C "$OUTPUT_DIR" kernel
 }
 
-build_image() {
+assemble_image() {
     mkdir -p "$OUTPUT_DIR/image"
     truncate -s 128M "$OUTPUT_DIR/rx1950-linux.img"
 }
 
 case "${1:-all}" in
-rootfs) build_rootfs ;;
-kernel) build_kernel ;;
-image) build_image ;;
-all) build_rootfs; build_kernel; build_image ;;
-*) exit 1 ;;
+    rootfs) build_rootfs ;;
+    kernel) build_kernel ;;
+    image) assemble_image ;;
+    all)
+        build_rootfs
+        build_kernel
+        assemble_image
+        ;;
+    *)
+        echo "Usage: $0 {rootfs|kernel|image|all}" >&2
+        exit 1
+        ;;
 esac
