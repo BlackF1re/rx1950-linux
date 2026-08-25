@@ -6,7 +6,7 @@ session. It does not modify Windows Mobile or the internal flash.
 ## Expected signals
 
 The boot card contains a HaRET build that knows the RX1950/S3C2442 machine and
-relocates the image by `0x90000`, away from the Windows Mobile memory area.
+relocates the image by `0x500000`, away from the Windows Mobile memory area.
 Before testing a new card, run `haret.exe` and confirm that `haretlog.txt`
 identifies `RX1950/s3c2442`; a generic Samsung identification means the wrong
 executable is still being used.
