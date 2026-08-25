@@ -1,68 +1,55 @@
 # Architecture
 
-## Boot model
+## Boot and storage model
 
-The initial target is a non-destructive SD card boot flow.
+The boot path is intentionally non-destructive:
 
 ```
-HP iPAQ boot firmware
-        |
-        v
 Windows Mobile 6.1
         |
         v
-HaRET
+HaRET from the SD card FAT partition
         |
         v
-Linux kernel
+Pinned rx1950 compatibility kernel
         |
         v
-Linux root filesystem on SD card
+Linux root filesystem on the SD card ext2 partition
 ```
 
-The internal device software remains available when the SD card is removed.
+HaRET receives only generated, release-owned files: its executable, boot
+configuration, kernel, optional initramfs and checksum manifest. It must never
+be configured to write the internal flash. The image layout keeps the boot
+partition separately mountable from Windows Mobile and Linux.
 
-## System layers
+## Runtime model
 
-### Boot layer
+The default system uses a compact BusyBox-oriented userspace and starts only
+services that have a device-facing purpose: console, input, storage handling,
+network management, time, SSH and the optional graphical session. Diagnostic,
+debug and graphical packages are opt-in. Persistent user data and the package
+database reside on the SD root/data filesystem.
 
-Responsible for loading Linux without modifying internal firmware.
+The base image includes `opkg` so optional software can be installed without
+inflating the default root filesystem. A project-hosted signed package feed,
+package keys, feed URLs and trust policy are a release gate; they will be
+versioned alongside the release manifest before packages are published.
+Packages are built for ARMv4T, declare their installed size and dependencies,
+and must not assume a desktop-class memory budget.
 
-Components:
+## Kernel policy
 
-- HaRET configuration
-- kernel image
-- boot parameters
-- SD card layout
+The upstream legacy machine description is available through Linux 6.2. The
+kernel subtree will pin a reviewed compatibility release, its exact source
+revision, cross compiler and board configuration. Board changes are stored as
+small, numbered patches with rationale and an on-device test reference. Any
+forward-port beyond that baseline is an explicit engineering effort, not a
+version-only upgrade.
 
-### Kernel layer
+## Artifact contract
 
-Targets the existing ARM S3C24xx Linux support:
-
-- Samsung S3C2442 platform
-- LCD controller
-- touchscreen input
-- SD/MMC
-- audio subsystem
-- power management
-- device drivers
-
-### Userspace layer
-
-The distribution is designed as an embedded Linux system with:
-
-- small memory footprint
-- reproducible builds
-- package installation
-- remote administration
-- optional graphical stack
-
-## Build output
-
-The final artifact is a raw SD card image:
-
-```
-rx1950-linux.img
-```
-
-This image can be written directly to an SD card.
+A release contains the compressed SD image, SHA-256 checksum, software bill of
+materials, build provenance, HaRET boot files, package-feed key and hardware
+acceptance report. Continuous integration builds each component independently,
+then assembles and inspects the final image. Publishing is gated on reproducible
+inputs and the complete hardware report described in [goals.md](goals.md).

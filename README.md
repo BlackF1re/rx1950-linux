@@ -1,67 +1,75 @@
 # rx1950-linux
 
-Modern lightweight Linux distribution for HP iPAQ rx1950.
+`rx1950-linux` is a compact, reproducible GNU/Linux system for the HP iPAQ
+rx1950. It boots from an SD card through HaRET and does not modify the
+device's internal Windows Mobile installation.
 
-## Project goal
+The project is designed for a useful everyday handheld rather than a demo:
+the base image is deliberately small, while an optional package feed makes it
+possible to add software without rebuilding the system. Every hardware feature
+has a documented support state and an on-device acceptance test.
 
-rx1950-linux aims to provide a complete, reproducible Linux distribution for the HP iPAQ rx1950 while preserving the original Windows Mobile 6.1 installation. The primary boot path uses an SD card and leaves the internal firmware untouched.
+## Design constraints
 
-The target is a practical pocket Linux computer with:
+- **Non-destructive boot:** Windows Mobile and the internal flash remain
+  untouched. Removing the card restores the original boot path.
+- **Actual target:** Samsung S3C2442 at 300 MHz, ARM920T / ARMv4T, 32 MiB RAM,
+  64 MiB ROM, QVGA 240x320 display, and SD/SDIO/MMC slot.
+- **Small but extensible:** BusyBox-based base system, read-write ext2 data
+  partition, SSH administration, and a repository-backed `opkg` package
+  manager. The package manager and its trust policy are part of the release,
+  not an afterthought.
+- **Maintained where feasible:** the hardware machine support exists in
+  upstream Linux through 6.2. The kernel is consequently a separately pinned,
+  security-reviewed compatibility baseline; claiming that a current upstream
+  kernel boots this legacy ARMv4T board would be inaccurate.
+- **Reproducible artifacts:** a release is an SD image plus checksums,
+  provenance, boot files, package-feed metadata, and an acceptance report.
 
-- SD card boot through the existing boot chain
-- Linux kernel with rx1950 hardware support
-- framebuffer display support
-- touchscreen input
-- power management
-- wireless networking
-- sound support
-- SSH access
-- package management
-- Python 3 runtime
-- command line and lightweight graphical environments
+## Target for the first usable release
 
-## Hardware target
+1. A FAT boot partition containing HaRET, kernel and a generated boot script.
+2. A Linux ext2 root partition which remains independent from the Windows
+   Mobile-readable boot volume.
+3. Console, QVGA framebuffer, touchscreen, physical buttons, SD storage,
+   backlight, battery status, audio, USB gadget, RTC, infrared and WLAN where
+   their device-specific drivers pass on-device tests.
+4. A compact launcher-oriented graphical session, terminal, Wi-Fi setup,
+   suspend controls and SSH. Features remain disabled by default until they
+   have passed their corresponding test.
+5. A signed feed of architecture-compatible `opkg` packages, with the base
+   image kept intentionally modest.
 
-| Component | Target |
-| --- | --- |
-| Device | HP iPAQ rx1950 |
-| SoC | Samsung S3C2442 |
-| CPU | ARM920T ARMv4T |
-| Display | 240x320 TFT LCD |
-| Input | Resistive touchscreen |
-| Storage | SD card root filesystem |
-| Boot | HaRET based SD boot |
-| Firmware | Windows Mobile 6.1 preserved |
+The current engineering image provides the bootable base, kernel, serial
+console, USB recovery networking, package manager and an experimental Matchbox
+handheld session. It configures the USB client link as `192.168.7.2/24` and
+starts SSH automatically; the first-boot credentials are `root` / `rx1950` and
+must be changed immediately. Release notes identify each hardware feature as
+verified on the device, available but requiring local configuration, or still
+under active work.
 
-## Build architecture
+The full, testable inventory is in [the hardware support matrix](docs/hardware.md).
+The boot and storage contract is in [the architecture guide](docs/architecture.md),
+and [the delivery plan](docs/goals.md) defines the completion criteria.
 
-```
-SD image
-├── FAT boot partition
-│   ├── HaRET loader
-│   ├── kernel image
-│   └── boot configuration
-│
-└── Linux root filesystem
-    ├── base system
-    ├── packages
-    ├── applications
-    └── user data
-```
+## Repository layout
 
-## Build system
+- `.github/workflows/` — reproducible build, validation and release jobs.
+- `board/` — board-specific kernel configuration and boot assets.
+- `buildroot/` — pinned build system and external tree for the minimal base.
+- `kernel/` — pinned kernel source policy, configuration and board patches.
+- `scripts/` — build, image, validation and release tooling.
+- `docs/` — installation, architecture, hardware and maintenance reference.
 
-The project uses automated GitHub Actions builds to generate a raw SD card image suitable for writing with tools such as Rufus.
+## Build and release status
 
-## Development stages
+Every push to `main` builds the root filesystem and kernel independently,
+verifies their hand-off digests, assembles a 96 MiB SD-card image and publishes
+the sealed payload as an Actions artifact. A maintainer can then run the same
+workflow manually with publishing enabled to create a GitHub release containing
+the image, checksum, provenance, kernel and HaRET startup script.
 
-1. Reproducible build pipeline
-2. Kernel and boot image generation
-3. Minimal userspace
-4. Hardware enablement
-5. Package repository
-6. Lightweight graphical environment
-
-## Documentation
-
-See the `docs` directory for architecture and hardware notes.
+The automated artifact is a reproducible engineering build, not an assertion
+that every peripheral has passed on a physical handheld. The first public
+release is gated by the device acceptance record in
+[goals.md](docs/goals.md).

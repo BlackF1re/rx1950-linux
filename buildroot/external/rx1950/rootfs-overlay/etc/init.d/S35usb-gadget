@@ -1,0 +1,12 @@
+#!/bin/sh
+# Provide a deterministic recovery channel over the supplied USB sync cable.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+case "$1" in
+    start)
+        ip link set usb0 up 2>/dev/null || exit 0
+        ip address add 192.168.7.2/24 dev usb0 2>/dev/null || true
+        ;;
+esac

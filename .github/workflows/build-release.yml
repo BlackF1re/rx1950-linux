@@ -1,13 +1,6 @@
 name: Build & Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish build artifact
-        required: true
-        type: boolean
-        default: false
   push:
     branches: [main]
     paths:
@@ -15,13 +8,26 @@ on:
       - 'buildroot/**'
       - 'kernel/**'
       - 'scripts/**'
+      - 'docs/**'
+      - 'README.md'
       - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a GitHub release after verification
+        required: true
+        type: boolean
+        default: false
+      version:
+        description: Release tag, required only when publishing
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: rx1950-linux-${{ github.ref }}
+  group: rx1950-linux-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -29,7 +35,7 @@ env:
 
 jobs:
   plan:
-    name: Plan build
+    name: Plan
     runs-on: ubuntu-24.04
     outputs:
       id: ${{ steps.meta.outputs.id }}
@@ -39,52 +45,115 @@ jobs:
           fetch-depth: 0
       - id: meta
         run: echo "id=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Validate source contract
+        run: bash scripts/validate.sh source
 
   rootfs:
-    name: Build root filesystem
+    name: Root filesystem
     needs: plan
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential bc cpio rsync file curl
-      - name: Build rootfs
-        run: ./scripts/build.sh rootfs
+      - name: Restore verified source downloads
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: rx1950-buildroot-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
+          restore-keys: |
+            rx1950-buildroot-sources-${{ runner.os }}-
+      - name: Restore Buildroot toolchain and package state
+        uses: actions/cache@v4
+        with:
+          path: .build/buildroot-output
+          key: rx1950-buildroot-output-v1-${{ runner.os }}-${{ hashFiles('buildroot/external/**') }}
+          restore-keys: |
+            rx1950-buildroot-output-v1-${{ runner.os }}-
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip
+      - name: Build root filesystem
+        run: bash scripts/build.sh rootfs
+      - name: Record root filesystem digest
+        run: sha256sum output/rootfs.ext2 output/buildroot.config > output/rootfs.SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: rx1950-rootfs-${{ needs.plan.outputs.id }}
+          name: rootfs-${{ needs.plan.outputs.id }}
           path: output/
+          if-no-files-found: error
 
   kernel:
-    name: Build kernel
+    name: Kernel
     needs: plan
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential bc flex bison libssl-dev libelf-dev
-      - name: Build kernel
-        run: ./scripts/build.sh kernel
+      - name: Restore verified source downloads
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: rx1950-kernel-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
+          restore-keys: |
+            rx1950-kernel-sources-${{ runner.os }}-
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev gcc-arm-linux-gnueabi curl xz-utils
+      - name: Build boot kernel
+        run: bash scripts/build.sh kernel
+      - name: Record kernel digest
+        run: sha256sum output/zImage output/kernel.config > output/kernel.SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: rx1950-kernel-${{ needs.plan.outputs.id }}
-          path: output/
+          name: kernel-${{ needs.plan.outputs.id }}
+          path: |
+            output/zImage
+            output/kernel.config
+            output/kernel.SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
 
   assemble:
-    name: Assemble SD image
+    name: Assemble and verify
     needs: [plan, rootfs, kernel]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install image tools
-        run: sudo apt-get update && sudo apt-get install -y dosfstools e2fsprogs parted
+        run: sudo apt-get update && sudo apt-get install -y dosfstools e2fsprogs mtools parted curl xz-utils
       - uses: actions/download-artifact@v4
         with:
-          pattern: rx1950-*
+          pattern: '*-${{ needs.plan.outputs.id }}'
+          path: output
           merge-multiple: true
-      - name: Assemble image
-        run: ./scripts/build.sh image
+      - name: Verify stage hand-offs
+        run: sha256sum --check output/rootfs.SHA256SUMS && sha256sum --check output/kernel.SHA256SUMS
+      - name: Assemble SD image
+        run: bash scripts/build.sh image
+      - name: Verify sealed image
+        run: bash scripts/validate.sh image
       - uses: actions/upload-artifact@v4
         with:
-          name: rx1950-linux-sd-image-${{ needs.plan.outputs.id }}
-          path: output/*.img
+          name: rx1950-linux-${{ needs.plan.outputs.id }}
+          path: |
+            output/rx1950-linux-sd.img
+            output/SHA256SUMS
+            output/provenance.txt
+            output/zImage
+            board/hp_rx1950/startup.txt
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [plan, assemble]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && inputs.version != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: rx1950-linux-${{ needs.plan.outputs.id }}
+          path: release
+      - name: Publish verified payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "$VERSION" release/rx1950-linux-sd.img release/SHA256SUMS release/provenance.txt release/zImage release/startup.txt --repo "$GITHUB_REPOSITORY" --title "rx1950-linux $VERSION" --generate-notes

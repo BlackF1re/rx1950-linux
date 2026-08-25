@@ -1,0 +1,21 @@
+#!/bin/sh
+# Start the intentionally small local PDA session after the TinyX server.
+
+case "$1" in
+    start)
+        export DISPLAY=:0.0
+        attempts=0
+        while [ ! -S /tmp/.X11-unix/X0 ] && [ "$attempts" -lt 10 ]; do
+            sleep 1
+            attempts=$((attempts + 1))
+        done
+        [ -S /tmp/.X11-unix/X0 ] || exit 0
+        matchbox-window-manager &
+        matchbox-desktop &
+        matchbox-panel &
+        matchbox-keyboard &
+        ;;
+    stop)
+        killall matchbox-keyboard matchbox-panel matchbox-desktop matchbox-window-manager 2>/dev/null || true
+        ;;
+esac
