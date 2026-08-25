@@ -1,8 +1,9 @@
-name: Build image
+name: Build rx1950-linux image
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -10,8 +11,9 @@ permissions:
 
 jobs:
   build:
-    name: Build rx1950 Linux image
+    name: Build SD card image
     runs-on: ubuntu-24.04
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,14 +21,16 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc cpio rsync unzip wget file parted dosfstools e2fsprogs
+          sudo apt-get install -y \
+            bc build-essential cpio file flex bison git rsync unzip wget \
+            dosfstools e2fsprogs parted qemu-user-static
 
-      - name: Prepare build environment
-        run: |
-          ./scripts/build.sh
+      - name: Build image
+        run: ./scripts/build.sh
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rx1950-linux-image
+          name: rx1950-linux-sd-image
           path: output/*.img
+          retention-days: 30

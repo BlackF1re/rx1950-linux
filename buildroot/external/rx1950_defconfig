@@ -1,0 +1,12 @@
+# rx1950-linux Buildroot configuration
+
+Target goals:
+
+- ARM little endian
+- Samsung S3C2442 / ARM920T
+- minimal embedded userspace
+- framebuffer support
+- networking support
+- package management support
+
+The final configuration will be generated as a pinned Buildroot external configuration.
