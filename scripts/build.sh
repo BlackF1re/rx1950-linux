@@ -15,6 +15,7 @@ readonly HARET_SHA256="5831d7cc8aba6ebd08709893101deca9da78e38ecde519a57adedfb16
 readonly KERNEL_OFFSET=0x1000000
 readonly KERNEL_ZRELADDR=0x8000
 readonly CROSS_COMPILE="${CROSS_COMPILE:-arm-linux-gnueabi-}"
+readonly IMAGE_NAME="${RX1950_IMAGE_NAME:-rx1950-linux-sd}"
 
 mkdir -p "${OUTPUT_DIR}" "${DOWNLOAD_DIR}" "${BUILD_DIR}"
 
@@ -94,7 +95,7 @@ validate_kernel_config() {
         'CONFIG_S3C24XX_DMAC=y'
         'CONFIG_MMC_S3C=y'
         'CONFIG_FB_S3C2410=y'
-        'CONFIG_SERIAL_SAMSUNG_CONSOLE=y'
+        '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set'
     )
 
     for requirement in "${requirements[@]}"; do
@@ -129,7 +130,7 @@ build_kernel() {
     mkdir -p "${out}"
     cp "${ROOT_DIR}/kernel/rx1950_defconfig" "${out}/.config"
     sed -i \
-        -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=ttySAC0,115200n8 console=tty0 loglevel=8 ignore_loglevel consoleblank=0 printk.time=1"|' \
+        -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel consoleblank=0 printk.time=1"|' \
         -e '/^CONFIG_CMDLINE_FORCE=/d' \
         "${out}/.config"
     printf '%s\n' 'CONFIG_CMDLINE_FORCE=y' >> "${out}/.config"
@@ -183,11 +184,11 @@ assemble_image() {
     local haret bootfs image root_start rootfs_size image_size haret_log_trigger
     haret="$(prepare_haret)"
     bootfs="${OUTPUT_DIR}/boot.fat"
-    image="${OUTPUT_DIR}/rx1950-linux-sd.img"
+    image="${OUTPUT_DIR}/${IMAGE_NAME}.img"
     haret_log_trigger="${OUTPUT_DIR}/earlyharetlog.txt"
     root_start=34816
 
-    rm -f "${bootfs}" "${image}"
+    rm -f "${bootfs}" "${image}" "${image}.xz"
     : > "${haret_log_trigger}"
     truncate --size 16M "${bootfs}"
     mkfs.vfat -F 16 -n RX1950BOOT "${bootfs}"
@@ -202,7 +203,6 @@ assemble_image() {
     rootfs_size="$(stat --format='%s' "${OUTPUT_DIR}/rootfs.ext2")"
     test $((rootfs_size % 512)) -eq 0 || die "root filesystem is not sector-aligned"
     image_size=$((root_start * 512 + rootfs_size))
-    rm -f "${image}.xz"
     truncate --size "${image_size}" "${image}"
     parted --script "${image}" mklabel msdos mkpart primary fat16 1MiB 17MiB mkpart primary ext4 17MiB 100% set 1 boot on
     dd if="${bootfs}" of="${image}" bs=512 seek=2048 conv=notrunc status=none
@@ -210,7 +210,7 @@ assemble_image() {
     xz --keep --force --threads=0 --check=crc32 "${image}"
     (
         cd "${OUTPUT_DIR}"
-        sha256sum rx1950-linux-sd.img rx1950-linux-sd.img.xz > SHA256SUMS
+        sha256sum "${IMAGE_NAME}.img" "${IMAGE_NAME}.img.xz" > SHA256SUMS
     )
     {
         printf 'build=%s\n' "${BUILD_ID:-local}"
@@ -218,6 +218,7 @@ assemble_image() {
         printf 'kernel=%s\n' "${KERNEL_VERSION}"
         printf 'haret-version=%s\n' "${HARET_VERSION}"
         printf 'haret-sha256=%s\n' "${HARET_SHA256}"
+        printf 'image=%s\n' "${IMAGE_NAME}.img"
         printf 'rootfs=ext4\n'
         printf 'profile=boot-probe\n'
         printf 'seed-image-bytes=%s\n' "${image_size}"
