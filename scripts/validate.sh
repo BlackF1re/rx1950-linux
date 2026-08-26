@@ -8,6 +8,67 @@ readonly IMAGE_NAME="${RX1950_IMAGE_NAME:-rx1950-linux-sd}"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+validate_patch_syntax() {
+  python3 - "$@" <<'PY'
+import pathlib
+import re
+import sys
+
+header_re = re.compile(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@')
+
+for filename in sys.argv[1:]:
+    path = pathlib.Path(filename)
+    lines = path.read_text(encoding='utf-8').splitlines()
+    saw_hunk = False
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line.startswith('@@ '):
+            index += 1
+            continue
+
+        saw_hunk = True
+        match = header_re.match(line)
+        if not match:
+            raise SystemExit(f'{path}: malformed hunk header at line {index + 1}: {line}')
+
+        old_expected = int(match.group(2) or 1)
+        new_expected = int(match.group(4) or 1)
+        old_count = 0
+        new_count = 0
+        index += 1
+
+        while index < len(lines):
+            body = lines[index]
+            if body.startswith('@@ ') or body.startswith('diff --git '):
+                break
+            if body.startswith(' '):
+                old_count += 1
+                new_count += 1
+            elif body.startswith('-'):
+                old_count += 1
+            elif body.startswith('+'):
+                new_count += 1
+            elif body.startswith('\\ No newline at end of file'):
+                pass
+            else:
+                raise SystemExit(
+                    f'{path}: invalid unified-diff line at {index + 1}: {body!r}'
+                )
+            index += 1
+
+        if (old_count, new_count) != (old_expected, new_expected):
+            raise SystemExit(
+                f'{path}: hunk count mismatch after line {index + 1}: '
+                f'header expects {old_expected}/{new_expected}, '
+                f'body contains {old_count}/{new_count}'
+            )
+
+    if not saw_hunk:
+        raise SystemExit(f'{path}: patch contains no hunks')
+PY
+}
+
 case "${1:-source}" in
   source)
     test -s "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
@@ -15,6 +76,7 @@ case "${1:-source}" in
     test -s "${ROOT_DIR}/kernel/patches/0002-s3c244x-restore-fclk-n-and-trace-uart.patch"
     test ! -e "${ROOT_DIR}/kernel/patches/0001-rx1950-add-early-led-boot-markers.patch"
     test ! -e "${ROOT_DIR}/kernel/patches/0002-rx1950-mark-zimage-entry-with-green-led.patch"
+    validate_patch_syntax "${ROOT_DIR}"/kernel/patches/*.patch
     grep -qx 'CONFIG_ARCH_MULTI_V4T=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_ARCH_MULTI_V7 is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_UNUSED_BOARD_FILES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
