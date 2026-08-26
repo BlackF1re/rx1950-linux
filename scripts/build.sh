@@ -79,8 +79,47 @@ build_rootfs() {
     cp "${out}/.config" "${OUTPUT_DIR}/buildroot.config"
 }
 
+validate_kernel_config() {
+    local config="$1" requirement
+    local -a requirements=(
+        'CONFIG_ARCH_MULTI_V4T=y'
+        '# CONFIG_ARCH_MULTI_V7 is not set'
+        'CONFIG_ARCH_S3C24XX=y'
+        'CONFIG_CPU_ARM920T=y'
+        'CONFIG_CPU_S3C2442=y'
+        'CONFIG_MACH_RX1950=y'
+        'CONFIG_ATAGS=y'
+        'CONFIG_UNUSED_BOARD_FILES=y'
+        'CONFIG_DMADEVICES=y'
+        'CONFIG_S3C24XX_DMAC=y'
+        'CONFIG_MMC_S3C=y'
+        'CONFIG_FB_S3C2410=y'
+        'CONFIG_SERIAL_SAMSUNG_CONSOLE=y'
+    )
+
+    for requirement in "${requirements[@]}"; do
+        grep -Fqx "${requirement}" "${config}" ||
+            die "kernel configuration lost RX1950 requirement: ${requirement}"
+    done
+}
+
+validate_kernel_binary() {
+    local vmlinux="$1" symbols="$2"
+    require "${CROSS_COMPILE}readelf"
+    require "${CROSS_COMPILE}nm"
+
+    "${CROSS_COMPILE}readelf" -h "${vmlinux}" | grep -Eq 'Machine:[[:space:]]+ARM' ||
+        die "linked kernel is not an ARM ELF"
+    "${CROSS_COMPILE}nm" "${vmlinux}" > "${symbols}"
+    grep -Eq '[[:space:]]__mach_desc_RX1950$' "${symbols}" ||
+        die "linked kernel does not contain the RX1950 machine descriptor"
+    grep -aFq 'HP iPAQ RX1950' "${vmlinux}" ||
+        die "linked kernel does not contain the RX1950 machine identity"
+}
+
 build_kernel() {
     require make
+    require grep
     require "${CROSS_COMPILE}gcc"
     local source
     source="$(prepare_kernel)"
@@ -95,14 +134,16 @@ build_kernel() {
         "${out}/.config"
     printf '%s\n' 'CONFIG_CMDLINE_FORCE=y' >> "${out}/.config"
     make -C "${source}" O="${out}" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" olddefconfig
+    validate_kernel_config "${out}/.config"
     make -C "${source}" O="${out}" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" -j"$(nproc)" zImage
+    validate_kernel_binary "${out}/vmlinux" "${out}/vmlinux.nm"
     cp "${out}/arch/arm/boot/zImage" "${OUTPUT_DIR}/zImage"
     cp "${out}/.config" "${OUTPUT_DIR}/kernel.config"
 }
 
 prepare_haret() {
     # This RX1950-specific binary is the historically deployed loader for
-    # the device.  It reaches the target from locked stock WM 6.1 systems,
+    # the device. It reaches the target from locked stock WM 6.1 systems,
     # unlike binaries built with contemporary Windows CE toolchains.
     local binary="${DOWNLOAD_DIR}/haret-${HARET_VERSION}.exe"
     download "https://downloads.tuxfamily.org/linuxrx1950/bootloader/haret-7jun2011.exe" \
@@ -111,12 +152,12 @@ prepare_haret() {
 }
 
 validate_zimage_placement() {
-    # HaRET places zImage at RAMADDR + KERNEL_OFFSET.  The ARM decompressor
-    # writes the inflated Image from RAMADDR + 0x8000 upwards.  The historical
-    # 5 MiB RX1950 offset was adequate for 2.6-era kernels, but a current
-    # kernel can overwrite unread compressed input before the first board
-    # callback runs.  Check the actual payload rather than relying on a
-    # version-specific estimate.
+    # HaRET places zImage at RAMADDR + KERNEL_OFFSET + 0x8000. The ARM
+    # decompressor writes the inflated Image from RAMADDR + 0x8000 upwards.
+    # The historical 5 MiB RX1950 offset was adequate for 2.6-era kernels,
+    # but a current kernel can overwrite unread compressed input before the
+    # first board callback runs. Check the actual payload instead of relying
+    # on a version-specific estimate.
     require grep; require gzip; require tail; require wc
     local image="$1" gzip_offset inflated_size available
     gzip_offset="$(LC_ALL=C grep --text --byte-offset --only-matching $'\x1f\x8b\x08' "${image}" | head --lines=1 | cut --delimiter=: --fields=1)"
@@ -139,16 +180,19 @@ assemble_image() {
     [[ -f "${OUTPUT_DIR}/rootfs.ext2" ]] || die "root filesystem artifact is not available"
     validate_zimage_placement "${OUTPUT_DIR}/zImage"
 
-    local haret bootfs image root_start rootfs_size image_size
+    local haret bootfs image root_start rootfs_size image_size haret_log_trigger
     haret="$(prepare_haret)"
     bootfs="${OUTPUT_DIR}/boot.fat"
     image="${OUTPUT_DIR}/rx1950-linux-sd.img"
+    haret_log_trigger="${OUTPUT_DIR}/earlyharetlog.txt"
     root_start=34816
 
     rm -f "${bootfs}" "${image}"
+    : > "${haret_log_trigger}"
     truncate --size 16M "${bootfs}"
     mkfs.vfat -F 16 -n RX1950BOOT "${bootfs}"
     mcopy -i "${bootfs}" "${haret}" ::haret.exe
+    mcopy -i "${bootfs}" "${haret_log_trigger}" ::earlyharetlog.txt
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/startup.txt" ::startup.txt
     mcopy -i "${bootfs}" "${OUTPUT_DIR}/zImage" ::zImage
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/README.txt" ::README.txt

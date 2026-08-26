@@ -5,5 +5,7 @@ rx1950-linux boot card
 3. HaRET reads startup.txt, detects RX1950/S3C2442, relocates the image by
    0x1000000, passes machine type 952, and boots zImage. This leaves enough
    room below the compressed image for the current kernel to decompress.
+4. After a reset, haretlog.txt on this FAT partition records HaRET detection
+   and the final kernel hand-off.
 
 The internal Windows Mobile installation is not changed.

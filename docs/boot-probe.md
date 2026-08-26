@@ -5,25 +5,42 @@ session. It does not modify Windows Mobile or the internal flash.
 
 ## Expected signals
 
-The boot card contains a HaRET build that knows the RX1950/S3C2442 machine and
-relocates the compressed image by `0x1000000`, away from the Windows Mobile
-memory area and above the space required for the current kernel to decompress.
-Before testing a new card, run `haret.exe` and confirm that `haretlog.txt`
-identifies `RX1950/s3c2442`; a generic Samsung identification means the wrong
-executable is still being used.
+The boot card contains the RX1950-aware HaRET loader. It identifies the device
+as RX1950/S3C2442, uses the 32 MiB SDRAM window at `0x30000000`, passes ARM
+machine type `952`, and relocates the compressed kernel by `0x1000000`. The
+kernel relocation leaves the Linux 6.2 decompressor enough room to expand the
+Image at `RAMADDR + 0x8000` without overwriting unread compressed input.
 
-The green LED is also forced by the zImage entry code, before decompression and
-before any Linux board callback. If it never lights while the correct HaRET log
-ends with `Go Go Go...`, execution did not reach the image entry instruction.
+The FAT partition contains `earlyharetlog.txt`. HaRET treats this file as a
+request to open `haretlog.txt` during its own startup and flushes the log before
+it takes exclusive control of the CPU. Therefore a crash immediately after the
+handoff still leaves the Windows-readable HaRET-side evidence on the card.
+After a failed boot, reset the device and confirm that `haretlog.txt` identifies
+`RX1950/s3c2442`, reports the configured RAM window and machine type, completes
+the kernel CRC check, and reaches the final Linux hand-off. A generic Samsung
+identification or a CRC failure is a loader/image failure and must not be
+debugged as a Linux board-init failure.
 
-After HaRET reports `booting Linux`, observe the LEDs for 20 seconds, then wait
-at least 90 seconds without pressing the reset button. The final kernel-only
-signal is a green heartbeat once the LED driver is registered. (The preceding
-GPIO transitions happen too quickly to be a dependable visual test.) A
-successful root filesystem hand-off additionally produces all of these signals:
+No boot-critical GPIO/LED instrumentation is patched into zImage or
+`mach-rx1950.c`. Earlier probes modified registers before the ARM boot ABI and
+RX1950 platform initialization were safely established; one probe overwrote
+`r1` before Linux saved HaRET's machine ID, and another inserted GPIO calls at
+an invalid location in the board source. The kernel now enters the unmodified
+upstream Linux 6.2 RX1950 machine callbacks.
 
-1. the green LED turns on when BusyBox userspace starts;
-2. the blue LED turns on after the SD root filesystem is available;
+The build is rejected unless the final `.config` contains ARM920T, S3C2442,
+`MACH_RX1950`, ATAG support, the S3C24XX DMA engine and the S3C MMC host. After
+linking, the build additionally verifies that `vmlinux` is an ARM ELF and that
+its symbol table contains `__mach_desc_RX1950`. This prevents a successful CI
+run from publishing a kernel for a different ARM family or without the RX1950
+machine descriptor.
+
+After HaRET hands off to Linux, wait at least 90 seconds without pressing reset.
+If the SD root filesystem reaches BusyBox userspace, the early boot service
+produces these persistent signals:
+
+1. the green LED is requested through the normal Linux LED class;
+2. the blue LED is requested after the root filesystem is available;
 3. the Windows-readable FAT partition contains `probe.log` with
    `early-userspace-reached` and `rootfs-ready`;
 4. when the sync cable is connected, `probe.log` records either
@@ -36,12 +53,13 @@ confirmed, create `/etc/rx1950/enable-matchbox` and reboot to enable it.
 
 Use the hardware reset control to return to Windows Mobile, remove the card,
 and read `haretlog.txt` and `probe.log` from the FAT partition on a PC. HaRET
-writes `haretlog.txt` before it gives control to Linux; `probe.log` is written
-only after BusyBox userspace starts. Never use any Linux command that targets
-internal NAND; this probe only mounts `/dev/mmcblk0p1`.
+writes and flushes `haretlog.txt` before it gives control to Linux; `probe.log`
+is written only after BusyBox userspace starts. Never use any Linux command
+that targets internal NAND; this probe only mounts `/dev/mmcblk0p1`.
 
-If `haretlog.txt` reports a CRC mismatch, Linux was not launched and the image
-must not be debugged as a kernel failure. If it ends with `Go Go Go...` but no
-`probe.log` is written, use the zImage green-LED signal to distinguish a fault
-before decompression from one later in kernel startup. Preserve both logs, the
-exact screen sequence, and the card model and capacity.
+If `haretlog.txt` ends at the successful hand-off but `probe.log` is absent, the
+failure is inside Linux before userspace. At that point preserve `haretlog.txt`,
+the exact screen behaviour, the card model/capacity and the image checksum. The
+loader-side ambiguity has already been removed: the published image is accepted
+only after its kernel target, RX1950 machine descriptor, decompression window,
+partition geometry and embedded root filesystem all pass CI verification.
