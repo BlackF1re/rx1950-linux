@@ -117,11 +117,17 @@ validate_zimage_placement() {
     # kernel can overwrite unread compressed input before the first board
     # callback runs.  Check the actual payload rather than relying on a
     # version-specific estimate.
-    require dd; require grep; require gzip; require wc
+    require grep; require gzip; require tail; require wc
     local image="$1" gzip_offset inflated_size available
     gzip_offset="$(LC_ALL=C grep --text --byte-offset --only-matching $'\x1f\x8b\x08' "${image}" | head --lines=1 | cut --delimiter=: --fields=1)"
     [[ "${gzip_offset}" =~ ^[0-9]+$ ]] || die "cannot locate gzip payload in ${image}"
-    inflated_size="$(dd if="${image}" bs=1 skip="${gzip_offset}" status=none | gzip --decompress --stdout | wc --bytes)"
+    # zImage appends an ARM boot trailer after the gzip member. GNU gzip
+    # reports that trailer with status 2 even though it has emitted the full
+    # decompressed kernel, so count the stream with pipefail disabled here.
+    inflated_size="$(
+        set +o pipefail
+        tail --bytes="+$((gzip_offset + 1))" "${image}" | gzip --decompress --stdout 2>/dev/null | wc --bytes
+    )"
     available=$((KERNEL_OFFSET - KERNEL_ZRELADDR))
     (( inflated_size > 0 )) || die "cannot read compressed kernel payload"
     (( inflated_size < available )) || die "zImage expands to ${inflated_size} bytes, exceeding the ${available}-byte safe decompression window"
