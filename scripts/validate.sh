@@ -4,6 +4,7 @@ set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly OUTPUT_DIR="${ROOT_DIR}/output"
+readonly IMAGE_NAME="${RX1950_IMAGE_NAME:-rx1950-linux-sd}"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
@@ -19,6 +20,7 @@ case "${1:-source}" in
     grep -qx 'CONFIG_DMADEVICES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_S3C24XX_DMAC=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_MMC_S3C=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set RAMADDR 0x30000000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set RAMSIZE 32\*1024\*1024' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
@@ -26,19 +28,20 @@ case "${1:-source}" in
     grep -qx 'set KERNEL_OFFSET 0x1000000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set FBDURINGBOOT 0' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set KERNELCRC 1' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
+    grep -qx 'set CMDLINE "root=/dev/mmcblk0p2 rootwait rw console=tty0"' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S10boot-probe"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
     git -C "${ROOT_DIR}" diff --check
     ;;
   image)
     command -v mdir >/dev/null 2>&1 || die "missing required command: mdir"
-    test -s "${OUTPUT_DIR}/rx1950-linux-sd.img"
-    test -s "${OUTPUT_DIR}/rx1950-linux-sd.img.xz"
+    image="${OUTPUT_DIR}/${IMAGE_NAME}.img"
+    test -s "${image}"
+    test -s "${image}.xz"
     test -s "${OUTPUT_DIR}/SHA256SUMS"
     test -s "${OUTPUT_DIR}/boot.fat"
     mdir -i "${OUTPUT_DIR}/boot.fat" ::earlyharetlog.txt >/dev/null
     (cd "${OUTPUT_DIR}" && sha256sum --check SHA256SUMS)
-    image="${OUTPUT_DIR}/rx1950-linux-sd.img"
     rootfs_size="$(stat --format='%s' "${OUTPUT_DIR}/rootfs.ext2")"
     test $((rootfs_size % 512)) -eq 0
     image_size="$(stat --format='%s' "${image}")"
