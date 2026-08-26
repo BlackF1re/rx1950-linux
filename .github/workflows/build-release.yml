@@ -138,6 +138,8 @@ jobs:
     name: Assemble and verify
     needs: [plan, rootfs, kernel]
     runs-on: ubuntu-24.04
+    env:
+      RX1950_IMAGE_NAME: rx1950-linux-${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - name: Restore verified HaRET toolchain
@@ -164,8 +166,8 @@ jobs:
         with:
           name: rx1950-linux-${{ needs.plan.outputs.id }}
           path: |
-            output/rx1950-linux-sd.img
-            output/rx1950-linux-sd.img.xz
+            output/rx1950-linux-${{ needs.plan.outputs.version }}.img
+            output/rx1950-linux-${{ needs.plan.outputs.version }}.img.xz
             output/SHA256SUMS
             output/provenance.txt
             output/zImage
@@ -175,7 +177,7 @@ jobs:
   publish:
     name: Publish release
     needs: [plan, assemble]
-    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -193,7 +195,7 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         shell: bash
         run: |
-          image="$(find release -type f -name rx1950-linux-sd.img.xz -print -quit)"
+          image="$(find release -type f -name "rx1950-linux-${VERSION}.img.xz" -print -quit)"
           checksums="$(find release -type f -name SHA256SUMS -print -quit)"
           provenance="$(find release -type f -name provenance.txt -print -quit)"
           kernel="$(find release -type f -name zImage -print -quit)"
