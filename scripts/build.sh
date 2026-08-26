@@ -119,7 +119,7 @@ validate_zimage_placement() {
     # version-specific estimate.
     require dd; require grep; require gzip; require wc
     local image="$1" gzip_offset inflated_size available
-    gzip_offset="$(LC_ALL=C grep --binary --byte-offset --only-matching $'\x1f\x8b\x08' "${image}" | head --lines=1 | cut --delimiter=: --fields=1)"
+    gzip_offset="$(LC_ALL=C grep --text --byte-offset --only-matching $'\x1f\x8b\x08' "${image}" | head --lines=1 | cut --delimiter=: --fields=1)"
     [[ "${gzip_offset}" =~ ^[0-9]+$ ]] || die "cannot locate gzip payload in ${image}"
     inflated_size="$(dd if="${image}" bs=1 skip="${gzip_offset}" status=none | gzip --decompress --stdout | wc --bytes)"
     available=$((KERNEL_OFFSET - KERNEL_ZRELADDR))
