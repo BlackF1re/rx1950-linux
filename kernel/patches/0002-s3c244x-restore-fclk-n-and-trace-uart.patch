@@ -1,0 +1,259 @@
+diff --git a/drivers/clk/samsung/clk-s3c2410.c b/drivers/clk/samsung/clk-s3c2410.c
+--- a/drivers/clk/samsung/clk-s3c2410.c
++++ b/drivers/clk/samsung/clk-s3c2410.c
+@@ -5,10 +5,13 @@
+  */
+ 
+ #include <linux/clk-provider.h>
++#include <linux/clkdev.h>
+ #include <linux/clk/samsung.h>
++#include <linux/io.h>
+ #include <linux/of.h>
+ #include <linux/of_address.h>
++#include <linux/serial_s3c.h>
+ 
+ #include <dt-bindings/clock/s3c2410.h>
+ 
+@@ -24,6 +27,10 @@
+ #define CLKDIVN		0x14
+ #define CAMDIVN		0x18
+ 
++#define S3C244X_UART_PHYS	0x50000000
++#define S3C244X_UART_STRIDE	0x4000
++#define S3C244X_UART_MAP_SIZE	0x9000
++
+ /* the soc types */
+ enum supported_socs {
+ 	S3C2410,
+@@ -260,6 +267,95 @@ static struct samsung_gate_clock s3c244x_common_gates[] __initdata = {
+ 	GATE(HCLK_CAM, "cam", "hclk", CLKCON, 19, 0, 0),
+ };
+ 
++/*
++ * S3C2440/S3C2442 UART source 3 is FCLK divided by a shared divider encoded
++ * in the UART UCON registers.  The legacy S3C24xx clock code exported this as
++ * clk_uart_baud3/fclk_n, but the CCF conversion in v3.16 lost that clock while
++ * legacy boards such as the HP iPAQ rx1950 kept selecting source 3.
++ *
++ * Keep the historical rate calculation verbatim.  The divider fields are
++ * shared in a peculiar way: UART0 supplies divisors 6..21, UART1 21..36,
++ * UART2 36..43, and the all-zero state observed on real hardware is /9.
++ */
++static void __iomem *s3c244x_uart_base;
++
++static unsigned long s3c244x_fclk_n_recalc_rate(struct clk_hw *hw,
++						 unsigned long parent_rate)
++{
++	u32 ucon0, ucon1, ucon2;
++	unsigned int divisor;
++
++	if (WARN_ON_ONCE(!s3c244x_uart_base))
++		return parent_rate / 9;
++
++	ucon0 = readl_relaxed(s3c244x_uart_base + S3C2410_UCON);
++	ucon1 = readl_relaxed(s3c244x_uart_base + S3C244X_UART_STRIDE +
++			      S3C2410_UCON);
++	ucon2 = readl_relaxed(s3c244x_uart_base + 2 * S3C244X_UART_STRIDE +
++			      S3C2410_UCON);
++
++	ucon0 &= S3C2440_UCON0_DIVMASK;
++	ucon1 &= S3C2440_UCON1_DIVMASK;
++	ucon2 &= S3C2440_UCON2_DIVMASK;
++
++	if (ucon0)
++		divisor = (ucon0 >> S3C2440_UCON_DIVSHIFT) + 6;
++	else if (ucon1)
++		divisor = (ucon1 >> S3C2440_UCON_DIVSHIFT) + 21;
++	else if (ucon2)
++		divisor = (ucon2 >> S3C2440_UCON_DIVSHIFT) + 36;
++	else
++		divisor = 9;
++
++	return parent_rate / divisor;
++}
++
++static const struct clk_ops s3c244x_fclk_n_ops = {
++	.recalc_rate = s3c244x_fclk_n_recalc_rate,
++};
++
++static const char * const s3c244x_fclk_n_parents[] = {
++	"fclk",
++};
++
++static const struct clk_init_data s3c244x_fclk_n_init = {
++	.name = "fclk_n",
++	.ops = &s3c244x_fclk_n_ops,
++	.parent_names = s3c244x_fclk_n_parents,
++	.num_parents = ARRAY_SIZE(s3c244x_fclk_n_parents),
++	.flags = CLK_GET_RATE_NOCACHE,
++};
++
++static struct clk_hw s3c244x_fclk_n_hw = {
++	.init = &s3c244x_fclk_n_init,
++};
++
++static int __init s3c244x_register_fclk_n(void)
++{
++	int ret;
++
++	s3c244x_uart_base = ioremap(S3C244X_UART_PHYS, S3C244X_UART_MAP_SIZE);
++	if (!s3c244x_uart_base)
++		return -ENOMEM;
++
++	ret = clk_hw_register(NULL, &s3c244x_fclk_n_hw);
++	if (ret)
++		return ret;
++
++	ret = clk_hw_register_clkdev(&s3c244x_fclk_n_hw, "clk_uart_baud3",
++				     "s3c2440-uart.0");
++	if (ret)
++		return ret;
++	ret = clk_hw_register_clkdev(&s3c244x_fclk_n_hw, "clk_uart_baud3",
++				     "s3c2440-uart.1");
++	if (ret)
++		return ret;
++	return clk_hw_register_clkdev(&s3c244x_fclk_n_hw, "clk_uart_baud3",
++				      "s3c2440-uart.2");
++}
++
+ static struct samsung_clock_alias s3c244x_common_aliases[] __initdata = {
+ 	ALIAS(PCLK_UART0, "s3c2440-uart.0", "uart"),
+ 	ALIAS(PCLK_UART1, "s3c2440-uart.1", "uart"),
+@@ -337,6 +433,7 @@ void __init s3c2410_common_clk_init(struct device_node *np, unsigned long xti_f,
+ {
+ 	struct samsung_clk_provider *ctx;
+ 	struct clk_hw **hws;
++	int ret;
+ 	reg_base = base;
+ 
+ 	if (np) {
+@@ -388,6 +485,11 @@ void __init s3c2410_common_clk_init(struct device_node *np, unsigned long xti_f,
+ 		samsung_clk_register_fixed_factor(ctx, s3c244x_common_ffactor,
+ 				ARRAY_SIZE(s3c244x_common_ffactor));
++
++		ret = s3c244x_register_fclk_n();
++		if (ret)
++			pr_err("S3C244x: failed to register historical fclk_n UART clock: %d\n",
++			       ret);
+ 	}
+ 
+ 	/* Register SoC-specific clocks. */
+diff --git a/drivers/tty/serial/samsung_tty.c b/drivers/tty/serial/samsung_tty.c
+--- a/drivers/tty/serial/samsung_tty.c
++++ b/drivers/tty/serial/samsung_tty.c
+@@ -1980,6 +1980,8 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
+ 
+ 	port->mapbase = res->start;
++	dev_notice(port->dev, "RX1950 UART%d: MMIO mapped at %pa\n",
++		   port->line, &port->mapbase);
+ 	ret = platform_get_irq(platdev, 0);
+ 	if (ret < 0) {
+ 		port->irq = 0;
+@@ -1992,12 +1994,17 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
+ 
+ 	switch (ourport->info->type) {
+ 	case TYPE_S3C24XX:
+-		ret = platform_get_irq(platdev, 1);
++		ret = platform_get_irq_optional(platdev, 1);
+ 		if (ret > 0)
+ 			ourport->tx_irq = ret;
+ 		break;
+ 	default:
+ 		break;
+ 	}
++	dev_notice(port->dev,
++		   "RX1950 UART%d: IRQ routing ready rx=%d tx=%d optional=%d\n",
++		   port->line, ourport->rx_irq, ourport->tx_irq, ret);
+ 
+ 	/*
+ 	 * DMA is currently supported only on DT platforms, if DMA properties
+@@ -2014,6 +2021,8 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
+ 		}
+ 	}
+ 
++	dev_notice(port->dev, "RX1950 UART%d: requesting controller clock\n",
++		   port->line);
+ 	ourport->clk	= clk_get(&platdev->dev, "uart");
+ 	if (IS_ERR(ourport->clk)) {
+ 		pr_err("%s: Controller clock not found\n",
+@@ -2029,9 +2038,21 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
+ 		clk_put(ourport->clk);
+ 		goto err;
+ 	}
++	dev_notice(port->dev,
++		   "RX1950 UART%d: controller clock enabled rate=%lu\n",
++		   port->line, clk_get_rate(ourport->clk));
+ 
++	dev_notice(port->dev,
++		   "RX1950 UART%d: requesting baud clock selection=0x%x\n",
++		   port->line, cfg->clk_sel);
+ 	ret = s3c24xx_serial_enable_baudclk(ourport);
+-	if (ret)
+-		pr_warn("uart: failed to enable baudclk\n");
++	if (ret) {
++		dev_err(port->dev,
++			"RX1950 UART%d: baud clock unavailable, skipping port\n",
++			port->line);
++		clk_disable_unprepare(ourport->clk);
++		clk_put(ourport->clk);
++		goto err;
++	}
++	dev_notice(port->dev,
++		   "RX1950 UART%d: baud clock ready rate=%lu ucon=0x%08x\n",
++		   port->line, ourport->baudclk_rate,
++		   rd_regl(port, S3C2410_UCON));
+ 
+ 	/* Keep all interrupts masked and cleared */
+ 	switch (ourport->info->type) {
+@@ -2055,8 +2076,12 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
+ 		ourport->rx_irq, ourport->tx_irq, port->uartclk);
+ 
+ 	/* reset the fifos (and setup the uart) */
++	dev_notice(port->dev, "RX1950 UART%d: resetting controller\n",
++		   port->line);
+ 	s3c24xx_serial_resetport(port, cfg);
++	dev_notice(port->dev, "RX1950 UART%d: controller reset complete ucon=0x%08x\n",
++		   port->line, rd_regl(port, S3C2410_UCON));
+ 
+ 	return 0;
+ 
+@@ -2144,6 +2169,8 @@ static int s3c24xx_serial_probe(struct platform_device *pdev)
+ 	ret = s3c24xx_serial_init_port(ourport, pdev);
+ 	if (ret < 0)
+ 		return ret;
++	dev_notice(&pdev->dev, "RX1950 UART%d: hardware init complete\n",
++		   index);
+ 
+ 	if (!s3c24xx_uart_drv.state) {
++		dev_notice(&pdev->dev, "RX1950 UART%d: registering serial core driver\n",
++			   index);
+ 		ret = uart_register_driver(&s3c24xx_uart_drv);
+ 		if (ret < 0) {
+ 			pr_err("Failed to register Samsung UART driver\n");
+@@ -2152,9 +2179,17 @@ static int s3c24xx_serial_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	dev_dbg(&pdev->dev, "%s: adding port\n", __func__);
+-	uart_add_one_port(&s3c24xx_uart_drv, &ourport->port);
++	dev_notice(&pdev->dev, "RX1950 UART%d: entering uart_add_one_port\n",
++		   index);
++	ret = uart_add_one_port(&s3c24xx_uart_drv, &ourport->port);
++	if (ret) {
++		dev_err(&pdev->dev, "RX1950 UART%d: uart_add_one_port failed: %d\n",
++			index, ret);
++		return ret;
++	}
++	dev_notice(&pdev->dev, "RX1950 UART%d: serial core port added\n",
++		   index);
+ 	platform_set_drvdata(pdev, &ourport->port);
+ 
+ 	/*
+@@ -2167,6 +2202,8 @@ static int s3c24xx_serial_probe(struct platform_device *pdev)
+ 	clk_disable_unprepare(ourport->clk);
+ 	if (!IS_ERR(ourport->baudclk))
+ 		clk_disable_unprepare(ourport->baudclk);
++	dev_notice(&pdev->dev, "RX1950 UART%d: probe clocks released\n",
++		   index);
+ 
+ 	ret = s3c24xx_serial_cpufreq_register(ourport);
+ 	if (ret < 0)

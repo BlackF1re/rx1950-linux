@@ -67,6 +67,24 @@ apply_kernel_patches() {
     done
 }
 
+validate_kernel_source() {
+    local source="$1" clk_file serial_file board_file
+    clk_file="${source}/drivers/clk/samsung/clk-s3c2410.c"
+    serial_file="${source}/drivers/tty/serial/samsung_tty.c"
+    board_file="${source}/arch/arm/mach-s3c/mach-rx1950.c"
+
+    [[ "$(grep -Fc '.clk_sel = S3C2410_UCON_CLKSEL3,' "${board_file}")" -eq 3 ]] ||
+        die "RX1950 UARTs no longer select the historical FCLK/n source"
+    grep -Fq 'static unsigned long s3c244x_fclk_n_recalc_rate' "${clk_file}" ||
+        die "kernel source lost the restored S3C244x fclk_n clock"
+    grep -Fq 'clk_hw_register_clkdev(&s3c244x_fclk_n_hw, "clk_uart_baud3"' "${clk_file}" ||
+        die "kernel source lost the clk_uart_baud3 alias"
+    grep -Fq 'platform_get_irq_optional(platdev, 1)' "${serial_file}" ||
+        die "Samsung UART optional TX IRQ handling is missing"
+    grep -Fq 'RX1950 UART%d: entering uart_add_one_port' "${serial_file}" ||
+        die "RX1950 UART boot trace markers are missing"
+}
+
 build_rootfs() {
     require make
     chmod +x "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/post-build.sh"
@@ -96,6 +114,8 @@ validate_kernel_config() {
         'CONFIG_MMC_S3C=y'
         'CONFIG_FB_S3C2410=y'
         '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set'
+        'CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"'
+        'CONFIG_CMDLINE_FORCE=y'
     )
 
     for requirement in "${requirements[@]}"; do
@@ -116,6 +136,8 @@ validate_kernel_binary() {
         die "linked kernel does not contain the RX1950 machine descriptor"
     grep -aFq 'HP iPAQ RX1950' "${vmlinux}" ||
         die "linked kernel does not contain the RX1950 machine identity"
+    grep -aFq 'RX1950 UART%d: entering uart_add_one_port' "${vmlinux}" ||
+        die "linked kernel does not contain the RX1950 UART trace markers"
 }
 
 build_kernel() {
@@ -125,12 +147,13 @@ build_kernel() {
     local source
     source="$(prepare_kernel)"
     apply_kernel_patches "${source}"
+    validate_kernel_source "${source}"
     local out="${BUILD_DIR}/kernel-output"
     rm -rf "${out}"
     mkdir -p "${out}"
     cp "${ROOT_DIR}/kernel/rx1950_defconfig" "${out}/.config"
     sed -i \
-        -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel consoleblank=0 printk.time=1"|' \
+        -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"|' \
         -e '/^CONFIG_CMDLINE_FORCE=/d' \
         "${out}/.config"
     printf '%s\n' 'CONFIG_CMDLINE_FORCE=y' >> "${out}/.config"
