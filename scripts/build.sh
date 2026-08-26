@@ -12,6 +12,8 @@ readonly KERNEL_VERSION="6.2"
 readonly KERNEL_SHA256="74862fa8ab40edae85bb3385c0b71fe103288bce518526d63197800b3cbdecb1"
 readonly HARET_VERSION="2011-06-07-rx1950"
 readonly HARET_SHA256="5831d7cc8aba6ebd08709893101deca9da78e38ecde519a57adedfb164c86902"
+readonly KERNEL_OFFSET=0x1000000
+readonly KERNEL_ZRELADDR=0x8000
 readonly CROSS_COMPILE="${CROSS_COMPILE:-arm-linux-gnueabi-}"
 
 mkdir -p "${OUTPUT_DIR}" "${DOWNLOAD_DIR}" "${BUILD_DIR}"
@@ -108,10 +110,28 @@ prepare_haret() {
     printf '%s\n' "${binary}"
 }
 
+validate_zimage_placement() {
+    # HaRET places zImage at RAMADDR + KERNEL_OFFSET.  The ARM decompressor
+    # writes the inflated Image from RAMADDR + 0x8000 upwards.  The historical
+    # 5 MiB RX1950 offset was adequate for 2.6-era kernels, but a current
+    # kernel can overwrite unread compressed input before the first board
+    # callback runs.  Check the actual payload rather than relying on a
+    # version-specific estimate.
+    require dd; require grep; require gzip; require wc
+    local image="$1" gzip_offset inflated_size available
+    gzip_offset="$(LC_ALL=C grep --binary --byte-offset --only-matching $'\x1f\x8b\x08' "${image}" | head --lines=1 | cut --delimiter=: --fields=1)"
+    [[ "${gzip_offset}" =~ ^[0-9]+$ ]] || die "cannot locate gzip payload in ${image}"
+    inflated_size="$(dd if="${image}" bs=1 skip="${gzip_offset}" status=none | gzip --decompress --stdout | wc --bytes)"
+    available=$((KERNEL_OFFSET - KERNEL_ZRELADDR))
+    (( inflated_size > 0 )) || die "cannot read compressed kernel payload"
+    (( inflated_size < available )) || die "zImage expands to ${inflated_size} bytes, exceeding the ${available}-byte safe decompression window"
+}
+
 assemble_image() {
     require dd; require parted; require mkfs.vfat; require mcopy; require debugfs; require e2fsck; require sha256sum; require xz
     [[ -f "${OUTPUT_DIR}/zImage" ]] || die "kernel artifact is not available"
     [[ -f "${OUTPUT_DIR}/rootfs.ext2" ]] || die "root filesystem artifact is not available"
+    validate_zimage_placement "${OUTPUT_DIR}/zImage"
 
     local haret bootfs image root_start rootfs_size image_size
     haret="$(prepare_haret)"

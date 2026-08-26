@@ -17,7 +17,7 @@ case "${1:-source}" in
     grep -qx 'set RAMADDR 0x30000000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set RAMSIZE 32\*1024\*1024' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set MTYPE 952' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
-    grep -qx 'set KERNEL_OFFSET 0x500000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
+    grep -qx 'set KERNEL_OFFSET 0x1000000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set FBDURINGBOOT 0' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set KERNELCRC 1' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S10boot-probe"

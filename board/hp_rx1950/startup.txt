@@ -3,7 +3,9 @@
 set RAMADDR 0x30000000
 set RAMSIZE 32*1024*1024
 set MTYPE 952
-set KERNEL_OFFSET 0x500000
+# Linux 6.2 expands to roughly 9.2 MiB before its own BSS is cleared.
+# Keep the compressed zImage at +16 MiB so decompression cannot overwrite it.
+set KERNEL_OFFSET 0x1000000
 set KERNEL zImage
 set FBDURINGBOOT 0
 set KERNELCRC 1
