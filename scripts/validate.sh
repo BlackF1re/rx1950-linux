@@ -11,8 +11,14 @@ case "${1:-source}" in
   source)
     test -s "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     test -s "${ROOT_DIR}/kernel/rx1950_defconfig"
-    test -s "${ROOT_DIR}/kernel/patches/0001-rx1950-add-early-led-boot-markers.patch"
-    test -s "${ROOT_DIR}/kernel/patches/0002-rx1950-mark-zimage-entry-with-green-led.patch"
+    test ! -e "${ROOT_DIR}/kernel/patches/0001-rx1950-add-early-led-boot-markers.patch"
+    test ! -e "${ROOT_DIR}/kernel/patches/0002-rx1950-mark-zimage-entry-with-green-led.patch"
+    grep -qx 'CONFIG_ARCH_MULTI_V4T=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx '# CONFIG_ARCH_MULTI_V7 is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_UNUSED_BOARD_FILES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_DMADEVICES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_S3C24XX_DMAC=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_MMC_S3C=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set RAMADDR 0x30000000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set RAMSIZE 32\*1024\*1024' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
@@ -25,9 +31,12 @@ case "${1:-source}" in
     git -C "${ROOT_DIR}" diff --check
     ;;
   image)
+    command -v mdir >/dev/null 2>&1 || die "missing required command: mdir"
     test -s "${OUTPUT_DIR}/rx1950-linux-sd.img"
     test -s "${OUTPUT_DIR}/rx1950-linux-sd.img.xz"
     test -s "${OUTPUT_DIR}/SHA256SUMS"
+    test -s "${OUTPUT_DIR}/boot.fat"
+    mdir -i "${OUTPUT_DIR}/boot.fat" ::earlyharetlog.txt >/dev/null
     (cd "${OUTPUT_DIR}" && sha256sum --check SHA256SUMS)
     image="${OUTPUT_DIR}/rx1950-linux-sd.img"
     rootfs_size="$(stat --format='%s' "${OUTPUT_DIR}/rootfs.ext2")"
