@@ -19,7 +19,7 @@ diff --git a/arch/arm/mach-s3c/mach-rx1950.c b/arch/arm/mach-s3c/mach-rx1950.c
 diff --git a/drivers/mmc/host/s3cmci.c b/drivers/mmc/host/s3cmci.c
 --- a/drivers/mmc/host/s3cmci.c
 +++ b/drivers/mmc/host/s3cmci.c
-@@ -1418,11 +1418,17 @@ static int s3cmci_probe_pdata(struct s3cmci_host *host)
+@@ -1358,11 +1358,17 @@ static int s3cmci_probe_pdata(struct s3cmci_host *host)
  	}
  
 +	dev_notice(&pdev->dev,
@@ -40,7 +40,8 @@ diff --git a/drivers/mmc/host/s3cmci.c b/drivers/mmc/host/s3cmci.c
  
  	if (pdata->no_wprotect)
  		mmc->caps2 |= MMC_CAP2_NO_WRITE_PROTECT;
-@@ -1575,3 +1580,7 @@ static int s3cmci_probe(struct platform_device *pdev)
+@@ -1513,7 +1519,11 @@ static int s3cmci_probe(struct platform_device *pdev)
+ 	}
  
  	host->clk_rate = clk_get_rate(host->clk);
 +	dev_notice(&pdev->dev,
@@ -48,7 +49,10 @@ diff --git a/drivers/mmc/host/s3cmci.c b/drivers/mmc/host/s3cmci.c
 +		   host->irq, s3cmci_host_usedma(host) ? "yes" : "no",
 +		   host->clk_rate);
  
-@@ -1604,8 +1613,11 @@ static int s3cmci_probe(struct platform_device *pdev)
+ 	mmc->ops 	= &s3cmci_ops;
+ 	mmc->ocr_avail	= MMC_VDD_32_33 | MMC_VDD_33_34;
+ #ifdef CONFIG_MMC_S3C_HW_SDIO_IRQ
+@@ -1540,11 +1550,14 @@ static int s3cmci_probe(struct platform_device *pdev)
  		goto free_dmabuf;
  	}
  
@@ -66,7 +70,7 @@ diff --git a/drivers/mmc/host/s3cmci.c b/drivers/mmc/host/s3cmci.c
 diff --git a/drivers/base/dd.c b/drivers/base/dd.c
 --- a/drivers/base/dd.c
 +++ b/drivers/base/dd.c
-@@ -733,6 +733,7 @@ int driver_probe_done(void)
+@@ -730,8 +730,9 @@ int driver_probe_done(void)
  {
  	int local_probe_count = atomic_read(&probe_count);
  
@@ -75,3 +79,5 @@ diff --git a/drivers/base/dd.c b/drivers/base/dd.c
 +			     local_probe_count);
  	if (local_probe_count)
  		return -EBUSY;
+ 	return 0;
+ }
