@@ -69,6 +69,28 @@ for filename in sys.argv[1:]:
 PY
 }
 
+validate_abi_configs() {
+    local kernel_config="$1" buildroot_config="$2"
+
+    grep -qx 'CONFIG_AEABI=y' "${kernel_config}" ||
+        die "kernel is not configured for the EABI used by the RX1950 rootfs"
+    grep -qx '# CONFIG_OABI_COMPAT is not set' "${kernel_config}" ||
+        die "kernel unexpectedly enables legacy OABI compatibility"
+    grep -qx 'CONFIG_KUSER_HELPERS=y' "${kernel_config}" ||
+        die "kernel lost ARM kuser helpers required by ARMv4T userspace"
+
+    grep -qx 'BR2_arm920t=y' "${buildroot_config}" ||
+        die "rootfs is not targeted at ARM920T"
+    grep -qx 'BR2_ARM_EABI=y' "${buildroot_config}" ||
+        die "rootfs is not using ARM EABI"
+    grep -qx 'BR2_SOFT_FLOAT=y' "${buildroot_config}" ||
+        die "rootfs is not using the RX1950 soft-float ABI"
+    grep -qx 'BR2_ARM_INSTRUCTIONS_ARM=y' "${buildroot_config}" ||
+        die "rootfs instruction mode drifted away from ARM"
+    grep -qx 'BR2_TOOLCHAIN_BUILDROOT_MUSL=y' "${buildroot_config}" ||
+        die "rootfs libc/toolchain contract changed"
+}
+
 case "${1:-source}" in
   source)
     test -s "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
@@ -78,9 +100,17 @@ case "${1:-source}" in
     test ! -e "${ROOT_DIR}/kernel/patches/0001-rx1950-add-early-led-boot-markers.patch"
     test ! -e "${ROOT_DIR}/kernel/patches/0002-rx1950-mark-zimage-entry-with-green-led.patch"
     validate_patch_syntax "${ROOT_DIR}"/kernel/patches/*.patch
+    grep -qx 'BR2_arm920t=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_ARM_EABI=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_SOFT_FLOAT=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_ARM_INSTRUCTIONS_ARM=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_TOOLCHAIN_BUILDROOT_MUSL=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'CONFIG_ARCH_MULTI_V4T=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_ARCH_MULTI_V7 is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_UNUSED_BOARD_FILES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_AEABI=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx '# CONFIG_OABI_COMPAT is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_KUSER_HELPERS=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_DMADEVICES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_S3C24XX_DMAC=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_MMC_S3C=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
@@ -110,11 +140,30 @@ case "${1:-source}" in
     ;;
   image)
     command -v mdir >/dev/null 2>&1 || die "missing required command: mdir"
+    command -v debugfs >/dev/null 2>&1 || die "missing required command: debugfs"
+    command -v readelf >/dev/null 2>&1 || die "missing required command: readelf"
     image="${OUTPUT_DIR}/${IMAGE_NAME}.img"
     test -s "${image}"
     test -s "${image}.xz"
     test -s "${OUTPUT_DIR}/SHA256SUMS"
     test -s "${OUTPUT_DIR}/boot.fat"
+    test -s "${OUTPUT_DIR}/kernel.config"
+    test -s "${OUTPUT_DIR}/buildroot.config"
+    validate_abi_configs "${OUTPUT_DIR}/kernel.config" "${OUTPUT_DIR}/buildroot.config"
+    grep -qx 'BR2_GCC_TARGET_CPU="arm920t"' "${OUTPUT_DIR}/buildroot.config" ||
+      die "generated rootfs toolchain is not pinned to ARM920T"
+
+    busybox_elf="$(mktemp)"
+    trap 'rm -f "${busybox_elf}"' EXIT
+    debugfs -R "dump -p /bin/busybox ${busybox_elf}" "${OUTPUT_DIR}/rootfs.ext2" >/dev/null 2>&1 ||
+      die "cannot extract BusyBox from rootfs for ABI verification"
+    readelf -h "${busybox_elf}" | grep -Eq 'Machine:[[:space:]]+ARM' ||
+      die "BusyBox is not an ARM ELF"
+    readelf -h "${busybox_elf}" | grep -Eq 'Flags:.*Version5 EABI.*soft-float ABI' ||
+      die "BusyBox is not ARM EABI5 soft-float"
+    readelf -A "${busybox_elf}" | grep -Fq 'Tag_CPU_arch: v4T' ||
+      die "BusyBox contains the wrong ARM ISA level; ARM920T requires ARMv4T"
+
     mdir -i "${OUTPUT_DIR}/boot.fat" ::earlyharetlog.txt >/dev/null
     (cd "${OUTPUT_DIR}" && sha256sum --check SHA256SUMS)
     rootfs_size="$(stat --format='%s' "${OUTPUT_DIR}/rootfs.ext2")"
