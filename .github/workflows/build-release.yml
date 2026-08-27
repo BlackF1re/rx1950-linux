@@ -98,19 +98,19 @@ jobs:
           key: rx1950-buildroot-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
           restore-keys: |
             rx1950-buildroot-sources-${{ runner.os }}-
-      - name: Restore Buildroot toolchain and package state
+      - name: Restore exact Buildroot toolchain and package state
         uses: actions/cache@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v1-${{ runner.os }}-${{ hashFiles('buildroot/external/**') }}
-          restore-keys: |
-            rx1950-buildroot-output-v1-${{ runner.os }}-
+          key: rx1950-buildroot-output-v2-${{ runner.os }}-${{ hashFiles('buildroot/external/**', 'scripts/build.sh') }}
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs
       - name: Build root filesystem
         run: bash scripts/build.sh rootfs
       - name: Validate root filesystem contract
-        run: bash scripts/validate-peripherals.sh rootfs output/buildroot.config
+        run: |
+          bash scripts/validate-peripherals.sh rootfs output/buildroot.config
+          bash scripts/validate-rootfs-payload.sh output/rootfs.ext2
       - name: Record root filesystem digest
         run: sha256sum output/rootfs.ext2 output/buildroot.config > output/rootfs.SHA256SUMS
       - uses: actions/upload-artifact@v4
