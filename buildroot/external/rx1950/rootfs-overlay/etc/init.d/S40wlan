@@ -1,0 +1,25 @@
+#!/bin/sh
+# Safe WLAN bootstrap.  Proprietary firmware is never bundled in the image;
+# if the user placed it on the FAT partition, import it and start the isolated
+# ACX modules.  Missing firmware is non-fatal and never delays SD/root boot.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+case "${1:-start}" in
+	start)
+		if ! [ -r /lib/firmware/WLANGEN.BIN ]; then
+			rx1950-wlan-firmware import >/dev/kmsg 2>&1 || true
+		fi
+		if [ -r /lib/firmware/WLANGEN.BIN ]; then
+			for f in /lib/firmware/RADIO??.BIN; do
+				[ -r "$f" ] || continue
+				rx1950-wlan start independent >/dev/kmsg 2>&1 || true
+				break
+			done
+		fi
+		;;
+	stop)
+		rx1950-wlan stop >/dev/kmsg 2>&1 || true
+		;;
+esac
