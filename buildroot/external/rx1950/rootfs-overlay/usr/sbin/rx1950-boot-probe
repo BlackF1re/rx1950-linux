@@ -1,25 +1,57 @@
 #!/bin/sh
-# Persistent, device-visible milestones for a headless first boot.
+# Persistent, device-visible milestones and diagnostic snapshots for first boot.
 
 set -u
 
 BOOT_DEVICE=/dev/mmcblk0p1
 BOOT_MOUNT=/mnt/boot
 LOG_FILE=${BOOT_MOUNT}/probe.log
+DMESG_FILE=${BOOT_MOUNT}/dmesg.log
+DIAG_FILE=${BOOT_MOUNT}/diagnostics.txt
+
+mount_boot() {
+    mkdir -p "$BOOT_MOUNT"
+    if ! grep -q " $BOOT_MOUNT " /proc/mounts; then
+        mount -t vfat -o rw "$BOOT_DEVICE" "$BOOT_MOUNT" 2>/dev/null || true
+    fi
+    grep -q " $BOOT_MOUNT " /proc/mounts
+}
 
 record() {
     message="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown-time) $*"
     printf '%s\n' "$message" > /dev/kmsg 2>/dev/null || true
     printf '%s\n' "$message" >&2
 
-    mkdir -p "$BOOT_MOUNT"
-    if ! grep -q " $BOOT_MOUNT " /proc/mounts; then
-        mount -t vfat -o rw "$BOOT_DEVICE" "$BOOT_MOUNT" 2>/dev/null || true
-    fi
-    if grep -q " $BOOT_MOUNT " /proc/mounts; then
+    if mount_boot; then
         printf '%s\n' "$message" >> "$LOG_FILE"
         sync "$LOG_FILE" 2>/dev/null || sync
     fi
+}
+
+snapshot_kernel() {
+    mount_boot || return 0
+
+    dmesg > "$DMESG_FILE" 2>/dev/null || true
+    {
+        printf '%s\n' '=== rx1950 boot diagnostics ==='
+        printf '%s\n' '=== cmdline ==='
+        cat /proc/cmdline 2>/dev/null || true
+        printf '%s\n' '=== uptime ==='
+        cat /proc/uptime 2>/dev/null || true
+        printf '%s\n' '=== interrupts ==='
+        cat /proc/interrupts 2>/dev/null || true
+        printf '%s\n' '=== iomem ==='
+        cat /proc/iomem 2>/dev/null || true
+        printf '%s\n' '=== ioports ==='
+        cat /proc/ioports 2>/dev/null || true
+        printf '%s\n' '=== mounts ==='
+        cat /proc/mounts 2>/dev/null || true
+        printf '%s\n' '=== devices ==='
+        cat /proc/devices 2>/dev/null || true
+        printf '%s\n' '=== modules ==='
+        cat /proc/modules 2>/dev/null || true
+    } > "$DIAG_FILE"
+    sync "$DMESG_FILE" "$DIAG_FILE" 2>/dev/null || sync
 }
 
 set_led() {
@@ -33,15 +65,19 @@ case "${1:-}" in
     early-userspace)
         set_led Green 1
         record "early-userspace-reached"
+        snapshot_kernel
         ;;
     rootfs-ready)
         set_led Blue 1
         record "rootfs-ready"
+        snapshot_kernel
         ;;
     usb-network-ready|usb0-unavailable)
         record "$1"
+        snapshot_kernel
         ;;
     *)
         record "unknown-probe-event:${1:-none}"
+        snapshot_kernel
         ;;
 esac
