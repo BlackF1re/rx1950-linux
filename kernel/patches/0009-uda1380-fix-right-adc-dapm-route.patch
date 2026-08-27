@@ -1,0 +1,16 @@
+diff --git a/sound/soc/codecs/uda1380.c b/sound/soc/codecs/uda1380.c
+--- a/sound/soc/codecs/uda1380.c
++++ b/sound/soc/codecs/uda1380.c
+@@ -405,7 +405,9 @@ static const struct snd_soc_dapm_route uda1380_dapm_routes[] = {
+ 	{"Input Mux", "Line", "Left PGA"},
+ 
+-	/* right input */
+-	{"Right ADC", "Mic + Line R", "Right PGA"},
+-	{"Right ADC", "Line", "Right PGA"},
++	/*
++	 * The input selector is controlled by Input Mux; Right ADC is not a
++	 * controlled widget, so modern DAPM rejects routes carrying mux labels.
++	 */
++	{"Right ADC", NULL, "Right PGA"},
+ 
+ 	/* inputs */

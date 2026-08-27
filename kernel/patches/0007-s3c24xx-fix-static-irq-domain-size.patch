@@ -1,0 +1,25 @@
+diff --git a/arch/arm/mach-s3c/irq-s3c24xx.c b/arch/arm/mach-s3c/irq-s3c24xx.c
+--- a/arch/arm/mach-s3c/irq-s3c24xx.c
++++ b/arch/arm/mach-s3c/irq-s3c24xx.c
+@@ -15,6 +15,7 @@
+ #include <linux/ioport.h>
+ #include <linux/device.h>
+ #include <linux/irqdomain.h>
++#include <linux/irqnr.h>
+ #include <linux/irqchip.h>
+ #include <linux/irqchip/chained_irq.h>
+ #include <linux/of.h>
+@@ -572,7 +573,12 @@ static struct s3c_irq_intc * __init s3c24xx_init_intc(struct device_node *np,
+ 		pr_debug("irq: found subintc\n");
+ 		intc->reg_pending = base + 0x18;
+ 		intc->reg_mask = base + 0x1c;
+-		irq_num = 29;
++		/*
++		 * Legacy machines reserve only the IRQ descriptors their SoC
++		 * actually implements.  Do not ask irq_domain_add_legacy() to map
++		 * the full 29-entry superset past nr_irqs (S3C2442 has 13).
++		 */
++		irq_num = min_t(int, 29, nr_irqs - S3C2410_IRQSUB(0));
+ 		irq_start = S3C2410_IRQSUB(0);
+ 		break;
+ 	case 0x4a000040:

@@ -1,8 +1,29 @@
 #!/bin/sh
 # Provide a deterministic recovery channel over the supplied USB sync cable.
+# A host DHCP service (for example Windows Internet Connection Sharing) may
+# additionally provide internet access without replacing 192.168.7.2.
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
+
+readonly DHCP_PID=/var/run/udhcpc-usb0.pid
+readonly DHCP_SCRIPT=/usr/share/udhcpc/rx1950-usb.script
+
+start_dhcp() {
+    command -v udhcpc >/dev/null 2>&1 || return 0
+    [ -x "$DHCP_SCRIPT" ] || return 0
+
+    if [ -s "$DHCP_PID" ]; then
+        old_pid="$(cat "$DHCP_PID" 2>/dev/null || true)"
+        [ -n "$old_pid" ] && kill "$old_pid" 2>/dev/null || true
+    fi
+    rm -f "$DHCP_PID"
+
+    # Keep boot non-blocking. udhcpc backgrounds itself if the laptop is not
+    # sharing a connection yet and continues listening for a later lease.
+    udhcpc -i usb0 -p "$DHCP_PID" -s "$DHCP_SCRIPT" \
+        -b -t 3 -T 2 -A 5 >/dev/kmsg 2>&1 &
+}
 
 case "$1" in
     start)
@@ -15,9 +36,17 @@ case "$1" in
         if ip link show usb0 >/dev/null 2>&1; then
             ip link set usb0 up
             ip address replace 192.168.7.2/24 dev usb0
+            start_dhcp
             /usr/sbin/rx1950-boot-probe usb-network-ready
         else
             /usr/sbin/rx1950-boot-probe usb0-unavailable
         fi
+        ;;
+    stop)
+        if [ -s "$DHCP_PID" ]; then
+            pid="$(cat "$DHCP_PID" 2>/dev/null || true)"
+            [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+        fi
+        rm -f "$DHCP_PID"
         ;;
 esac

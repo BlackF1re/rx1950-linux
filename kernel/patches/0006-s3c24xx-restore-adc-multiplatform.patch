@@ -1,0 +1,12 @@
+diff --git a/arch/arm/mach-s3c/Kconfig b/arch/arm/mach-s3c/Kconfig
+--- a/arch/arm/mach-s3c/Kconfig
++++ b/arch/arm/mach-s3c/Kconfig
+@@ -65,7 +65,7 @@ config S3C_GPIO_TRACK
+ 
+ config S3C_ADC
+ 	bool "ADC common driver support"
+-	depends on !ARCH_MULTIPLATFORM
++	depends on !ARCH_MULTIPLATFORM || ARCH_S3C24XX
+ 	help
+ 	  Core support for the ADC block found in the Samsung SoC systems
+ 	  for drivers such as the touchscreen and hwmon to use to share
