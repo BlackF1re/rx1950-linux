@@ -40,22 +40,7 @@ diff --git a/arch/arm/mach-s3c/mach-rx1950.c b/arch/arm/mach-s3c/mach-rx1950.c
  };
  
  static struct platform_device rx1950_battery = {
-@@ -773,5 +790,6 @@
- 	&s3c_device_wdt,
- 	&s3c_device_i2c0,
-+	&s3c2410_device_dma,
- 	&s3c_device_iis,
- 	&s3c_device_usbgadget,
- 	&s3c_device_rtc,
-@@ -778,6 +796,7 @@
- 	&s3c_device_nand,
- 	&s3c_device_sdi,
- 	&s3c_device_adc,
-+	&s3c_device_hwmon,
- 	&s3c_device_ts,
- 	&samsung_device_pwm,
- 	&rx1950_backlight,
-@@ -816,6 +834,7 @@
+@@ -816,6 +833,7 @@
  	s3c24xx_fb_set_platdata(&rx1950_lcd_cfg);
  	s3c24xx_udc_set_platdata(&rx1950_udc_cfg);
  	s3c24xx_ts_set_platdata(&rx1950_ts_cfg);
@@ -63,3 +48,17 @@ diff --git a/arch/arm/mach-s3c/mach-rx1950.c b/arch/arm/mach-s3c/mach-rx1950.c
  	gpiod_add_lookup_table(&rx1950_mmc_gpio_table);
  	s3c24xx_mci_set_platdata(&rx1950_mmc_cfg);
  	s3c_i2c0_set_platdata(NULL);
+@@ -857,6 +875,13 @@
+ 	s3c_gpio_cfgall_range(S3C2410_GPE(0), 5, S3C_GPIO_SFN(2),
+ 			      S3C_GPIO_PULL_NONE);
+ 	platform_add_devices(rx1950_devices, ARRAY_SIZE(rx1950_devices));
++
++	/*
++	 * Keep optional diagnostics outside the boot-critical device array.
++	 * platform_add_devices() rolls the complete array back on one registration
++	 * error, which must never be allowed to remove the SD root device.
++	 */
++	WARN_ON(platform_device_register(&s3c_device_hwmon));
+ 
+ 	i2c_register_board_info(0, rx1950_i2c_devices,
+ 		ARRAY_SIZE(rx1950_i2c_devices));
