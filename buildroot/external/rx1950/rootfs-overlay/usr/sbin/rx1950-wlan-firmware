@@ -1,0 +1,148 @@
+#!/bin/sh
+# Install ACX100 firmware without redistributing proprietary TI blobs in the
+# rx1950-linux image.  Firmware can be copied to the FAT boot partition by the
+# user or fetched explicitly from OpenBSD's separately distributed firmware
+# package.
+
+set -u
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+DEST=/lib/firmware
+BOOT=/dev/mmcblk0p1
+MNT=/mnt/rx1950-boot
+OPENBSD_URL=${RX1950_ACX_FIRMWARE_URL:-https://firmware.openbsd.org/firmware/7.7/acx-firmware-1.4p6.tgz}
+
+say() { printf '%s\n' "$*"; }
+
+install_main() {
+	src=$1
+	[ -r "$src" ] || return 1
+	mkdir -p "$DEST"
+	cp "$src" "$DEST/WLANGEN.BIN"
+	chmod 0644 "$DEST/WLANGEN.BIN"
+	return 0
+}
+
+install_radios_from_dir() {
+	dir=$1
+	installed=0
+	for src in "$dir"/RADIO??.BIN "$dir"/radio??.bin; do
+		[ -r "$src" ] || continue
+		base="$(basename "$src")"
+		suffix="$(printf '%s' "$base" | sed -n 's/^[Rr][Aa][Dd][Ii][Oo]\([0-9A-Fa-f][0-9A-Fa-f]\)\.[Bb][Ii][Nn]$/\1/p')"
+		[ -n "$suffix" ] || continue
+		suffix="$(printf '%s' "$suffix" | tr 'a-f' 'A-F')"
+		cp "$src" "$DEST/RADIO${suffix}.BIN"
+		chmod 0644 "$DEST/RADIO${suffix}.BIN"
+		installed=1
+	done
+
+	for src in "$dir"/tiacx100r??; do
+		[ -r "$src" ] || continue
+		base="$(basename "$src")"
+		suffix="${base#tiacx100r}"
+		case "$suffix" in
+			[0-9A-Fa-f][0-9A-Fa-f]) ;;
+			*) continue ;;
+		esac
+		suffix="$(printf '%s' "$suffix" | tr 'a-f' 'A-F')"
+		cp "$src" "$DEST/RADIO${suffix}.BIN"
+		chmod 0644 "$DEST/RADIO${suffix}.BIN"
+		installed=1
+	done
+	return $((1 - installed))
+}
+
+import_dir() {
+	dir=$1
+	mkdir -p "$DEST"
+	main_ok=0
+	radio_ok=0
+
+	for src in "$dir"/WLANGEN.BIN "$dir"/wlangen.bin "$dir"/tiacx100; do
+		if [ -r "$src" ] && install_main "$src"; then
+			main_ok=1
+			break
+		fi
+	done
+	if install_radios_from_dir "$dir"; then
+		radio_ok=1
+	fi
+
+	if [ "$main_ok" -eq 1 ] && [ "$radio_ok" -eq 1 ]; then
+		sync
+		say "ACX100 firmware installed in $DEST"
+		return 0
+	fi
+
+	say "Firmware incomplete: need WLANGEN.BIN (or tiacx100) and at least one RADIOxx.BIN (or tiacx100rXX)" >&2
+	return 1
+}
+
+import_boot() {
+	mkdir -p "$MNT"
+	mounted_here=0
+	if ! grep -q " $MNT " /proc/mounts 2>/dev/null; then
+		mount -t vfat -o ro "$BOOT" "$MNT" || return 1
+		mounted_here=1
+	fi
+	import_dir "$MNT"
+	ret=$?
+	[ "$mounted_here" -eq 0 ] || umount "$MNT" 2>/dev/null || true
+	return "$ret"
+}
+
+fetch_openbsd() {
+	command -v curl >/dev/null 2>&1 || { say "curl is unavailable" >&2; return 1; }
+	tmp="/tmp/rx1950-acx-fw.$$"
+	rm -rf "$tmp"
+	mkdir -p "$tmp/unpack"
+	trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+	say "Downloading separately distributed ACX firmware from OpenBSD..."
+	curl --fail --location --proto '=https' --tlsv1.2 "$OPENBSD_URL" -o "$tmp/acx.tgz" || return 1
+	tar -xzf "$tmp/acx.tgz" -C "$tmp/unpack" || return 1
+
+	main="$(find "$tmp/unpack" -type f -name tiacx100 2>/dev/null | head -n 1)"
+	[ -n "$main" ] || main="$(find "$tmp/unpack" -type f -name WLANGEN.BIN 2>/dev/null | head -n 1)"
+	[ -n "$main" ] || { say "ACX100 main firmware not found in downloaded package" >&2; return 1; }
+
+	mkdir -p "$tmp/selected"
+	cp "$main" "$tmp/selected/tiacx100"
+	for src in $(find "$tmp/unpack" -type f -name 'tiacx100r??' 2>/dev/null); do
+		cp "$src" "$tmp/selected/$(basename "$src")"
+	done
+	for src in $(find "$tmp/unpack" -type f -name 'RADIO??.BIN' 2>/dev/null); do
+		cp "$src" "$tmp/selected/$(basename "$src")"
+	done
+
+	import_dir "$tmp/selected"
+}
+
+status() {
+	if [ -r "$DEST/WLANGEN.BIN" ]; then
+		say "main: $DEST/WLANGEN.BIN"
+	else
+		say "main: missing"
+	fi
+	found=0
+	for f in "$DEST"/RADIO??.BIN; do
+		[ -r "$f" ] || continue
+		found=1
+		say "radio: $f"
+	done
+	[ "$found" -eq 1 ] || say "radio: missing"
+}
+
+case "${1:-status}" in
+	status) status ;;
+	import)
+		if [ "$#" -ge 2 ]; then import_dir "$2"; else import_boot; fi
+		;;
+	fetch) fetch_openbsd ;;
+	*)
+		say "usage: rx1950-wlan-firmware {status|import [directory]|fetch}" >&2
+		exit 2
+		;;
+esac
