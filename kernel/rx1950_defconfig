@@ -30,6 +30,8 @@ CONFIG_VT=y
 CONFIG_VT_CONSOLE=y
 CONFIG_DEVTMPFS=y
 CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_UNIX98_PTYS=y
+# CONFIG_LEGACY_PTYS is not set
 
 # Storage and filesystems used by the SD image and the resident NAND.
 CONFIG_BLOCK=y
