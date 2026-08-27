@@ -24,6 +24,13 @@ CONFIG_AEABI=y
 # CONFIG_OABI_COMPAT is not set
 CONFIG_KUSER_HELPERS=y
 
+# Device nodes and local framebuffer console.
+CONFIG_TTY=y
+CONFIG_VT=y
+CONFIG_VT_CONSOLE=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+
 # Storage and filesystems used by the SD image and the resident NAND.
 CONFIG_BLOCK=y
 CONFIG_MSDOS_PARTITION=y
