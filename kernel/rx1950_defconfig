@@ -18,6 +18,12 @@ CONFIG_FPE_NWFPE_XP=y
 CONFIG_HZ_100=y
 CONFIG_SUSPEND=y
 
+# Buildroot/musl uses the ARM EABI syscall convention. Keep the kernel on
+# the same ABI; OABI compatibility is unnecessary for the RX1950 rootfs.
+CONFIG_AEABI=y
+# CONFIG_OABI_COMPAT is not set
+CONFIG_KUSER_HELPERS=y
+
 # Storage and filesystems used by the SD image and the resident NAND.
 CONFIG_BLOCK=y
 CONFIG_MSDOS_PARTITION=y
