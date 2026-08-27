@@ -28,8 +28,8 @@ case "${1:-source}" in
         dhcp_script="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/share/udhcpc/rx1950-usb.script"
         sensors_script="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-sensors"
         opkg_conf="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/opkg/opkg.conf"
-        dma_hwmon_patch="${ROOT_DIR}/kernel/patches/0010-rx1950-register-dma-and-hwmon.patch"
-        mmc_gpio_patch="${ROOT_DIR}/kernel/patches/0011-s3cmci-fix-gpiod-return-handling.patch"
+        hwmon_patch="${ROOT_DIR}/kernel/patches/0010-rx1950-enable-hwmon.patch"
+        unsafe_mmc_patch="${ROOT_DIR}/kernel/patches/0011-s3cmci-fix-gpiod-return-handling.patch"
 
         require_line 'CONFIG_S3C_ADC=y' "$kernel_defconfig" 'RX1950 ADC is not requested'
         require_line 'CONFIG_TOUCHSCREEN_S3C2410=y' "$kernel_defconfig" 'RX1950 touchscreen is not requested'
@@ -55,18 +55,22 @@ case "${1:-source}" in
         require_fragment '{"Right ADC", NULL, "Right PGA"}' \
             "${ROOT_DIR}/kernel/patches/0009-uda1380-fix-right-adc-dapm-route.patch" \
             'UDA1380 modern DAPM route fix is missing'
-        require_fragment 'select S3C_DEV_HWMON' "$dma_hwmon_patch" \
+        require_fragment 'select S3C_DEV_HWMON' "$hwmon_patch" \
             'RX1950 hwmon platform device selection is missing'
-        require_fragment '&s3c2410_device_dma,' "$dma_hwmon_patch" \
-            'RX1950 S3C2442 DMA platform device registration is missing'
-        require_fragment '&s3c_device_hwmon,' "$dma_hwmon_patch" \
-            'RX1950 hwmon platform device registration is missing'
-        require_fragment 's3c_hwmon_set_platdata(&rx1950_hwmon_pdata);' "$dma_hwmon_patch" \
+        require_fragment 's3c_hwmon_set_platdata(&rx1950_hwmon_pdata);' "$hwmon_patch" \
             'RX1950 hwmon platform data is missing'
-        require_fragment '.mult = 4235' "$dma_hwmon_patch" \
+        require_fragment '.mult = 4235' "$hwmon_patch" \
             'RX1950 battery-voltage hwmon scaling is missing'
-        [[ "$(grep -Fc 'if (ret && ret != -ENOENT)' "$mmc_gpio_patch")" -eq 2 ]] ||
-            die 'S3CMCI GPIO success handling is incomplete'
+        require_fragment 'WARN_ON(platform_device_register(&s3c_device_hwmon));' "$hwmon_patch" \
+            'RX1950 hwmon is not isolated from the boot-critical device array'
+        if grep -Fq '&s3c2410_device_dma,' "$hwmon_patch"; then
+            die 'experimental DMA device must not be registered in the RX1950 boot path'
+        fi
+        if grep -Fq '&s3c_device_hwmon,' "$hwmon_patch"; then
+            die 'optional hwmon device must not be part of the rollback-prone RX1950 device array'
+        fi
+        [[ ! -e "$unsafe_mmc_patch" ]] ||
+            die 'unsafe S3CMCI GPIO control-flow patch must remain reverted'
 
         require_line 'BR2_PACKAGE_HTOP=y' "$rootfs_defconfig" 'htop is missing from the engineering image'
         require_line 'BR2_PACKAGE_EVTEST=y' "$rootfs_defconfig" 'evtest is missing from the engineering image'
@@ -98,7 +102,7 @@ case "${1:-source}" in
         require_line 'CONFIG_RTC_DRV_S3C=y' "$config" 'generated kernel dropped the RTC driver'
         require_line 'CONFIG_SND_SOC_SAMSUNG_RX1950_UDA1380=y' "$config" 'generated kernel dropped RX1950 audio'
         require_line 'CONFIG_DMADEVICES=y' "$config" 'generated kernel dropped DMAEngine'
-        require_line 'CONFIG_S3C24XX_DMAC=y' "$config" 'generated kernel dropped the S3C24xx DMA controller'
+        require_line 'CONFIG_S3C24XX_DMAC=y' "$config" 'generated kernel dropped the S3C24xx DMA controller driver'
         require_line 'CONFIG_MMC_S3C_PIO=y' "$config" 'generated kernel no longer pins SD to PIO'
         require_line '# CONFIG_MMC_S3C_DMA is not set' "$config" 'generated kernel unexpectedly enabled S3C MCI DMA'
         require_line 'CONFIG_I2C_CHARDEV=y' "$config" 'generated kernel dropped I2C userspace access'
