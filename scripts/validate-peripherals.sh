@@ -50,8 +50,8 @@ source)
     require_fragment 's3c_hwmon_set_platdata(&rx1950_hwmon_pdata);' "$hwmon" 'RX1950 hwmon platform data missing'
     require_fragment '.mult = 4235' "$hwmon" 'RX1950 voltage scaling missing'
     require_fragment 'WARN_ON(platform_device_register(&s3c_device_hwmon));' "$hwmon" 'hwmon is not isolated from boot-critical devices'
-    grep -Fq '&s3c2410_device_dma,' "$hwmon" && die 'experimental DMA device must not enter the RX1950 boot path'
-    grep -Fq '&s3c_device_hwmon,' "$hwmon" && die 'optional hwmon must not enter the RX1950 boot-critical device array'
+    if grep -Fq '&s3c2410_device_dma,' "$hwmon"; then die 'experimental DMA device must not enter the RX1950 boot path'; fi
+    if grep -Fq '&s3c_device_hwmon,' "$hwmon"; then die 'optional hwmon must not enter the RX1950 boot-critical device array'; fi
     [[ ! -e "$unsafe_mmc" ]] || die 'unsafe S3CMCI GPIO patch must remain reverted'
 
     require_fragment '.default_trigger' "$blue_patch" 'Blue LED decoupling patch missing'
@@ -63,7 +63,7 @@ source)
     require_fragment '#define RX1950_WLAN_IRQ_GPIO      S3C2410_GPG(8)' "$glue" 'WLAN IRQ wiring missing'
     require_fragment 'static bool gpa11_power;' "$glue" 'GPA11 fallback is not explicit'
     require_fragment 'if (gpa11_power)' "$glue" 'GPA11 is not opt-in'
-    grep -Eq 'GPC\(8\)|GPC\(9\)' "$glue" && die 'WLAN glue must not touch active LCD GPC8/GPC9 pins'
+    if grep -Eq 'GPC\(8\)|GPC\(9\)' "$glue"; then die 'WLAN glue must not touch active LCD GPC8/GPC9 pins'; fi
 
     require_fragment "readonly ACX_COMMIT=\"${ACX_COMMIT}\"" "$build" 'ACX source commit is not pinned'
     require_fragment 'CONFIG_ACX_MAC80211_MEM=m' "$build" 'ACX memory transport not built'
@@ -101,7 +101,7 @@ source)
     require_fragment 'rx1950-wlan start independent' "$wlan_init" 'boot WLAN path is not independent from Blue/GPA11'
     require_line 'dest root /' "$opkg" 'opkg root destination missing'
     require_line 'lists_dir ext /var/lib/opkg/lists' "$opkg" 'opkg list directory missing'
-    grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "$opkg" && die 'engineering opkg config must not use an unverified binary feed'
+    if grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "$opkg"; then die 'engineering opkg config must not use an unverified binary feed'; fi
     ;;
 
 kernel)
@@ -151,7 +151,7 @@ image)
         /etc/init.d/S10kernel-modules /etc/init.d/S35usb-gadget /etc/init.d/S40wlan; do
         rootfs_has "$rootfs" "$path" || die "sealed rootfs missing $path"
     done
-    rootfs_has "$rootfs" /lib/firmware/WLANGEN.BIN && die 'sealed rootfs illegally bundles proprietary WLANGEN.BIN'
+    if rootfs_has "$rootfs" /lib/firmware/WLANGEN.BIN; then die 'sealed rootfs illegally bundles proprietary WLANGEN.BIN'; fi
     ;;
 
 *) die 'usage: validate-peripherals.sh {source|kernel [config]|rootfs [config]|image}' ;;
