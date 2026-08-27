@@ -58,6 +58,33 @@ snapshot_backlight() {
     [ "$found" -eq 1 ] || printf '%s\n' 'none'
 }
 
+snapshot_usb() {
+    printf '%s\n' '=== usb gadget ==='
+    found=0
+    for udc in /sys/class/udc/*; do
+        [ -e "$udc" ] || continue
+        found=1
+        printf 'udc=%s\n' "$(basename "$udc")"
+        for field in state function; do
+            if [ -r "$udc/$field" ]; then
+                printf '%s=' "$field"
+                cat "$udc/$field" 2>/dev/null || true
+            fi
+        done
+    done
+    [ "$found" -eq 1 ] || printf '%s\n' 'udc=none'
+
+    printf '%s\n' '=== network interfaces ==='
+    ip -details link show 2>/dev/null || true
+    ip address show 2>/dev/null || true
+
+    printf '%s\n' '=== usb platform devices ==='
+    for device in /sys/bus/platform/devices/*usb*; do
+        [ -e "$device" ] || continue
+        printf '%s\n' "$(basename "$device")"
+    done
+}
+
 snapshot_kernel() {
     mount_boot || return 0
 
@@ -69,6 +96,7 @@ snapshot_kernel() {
         printf '%s\n' '=== uptime ==='
         cat /proc/uptime 2>/dev/null || true
         snapshot_backlight
+        snapshot_usb
         printf '%s\n' '=== interrupts ==='
         cat /proc/interrupts 2>/dev/null || true
         printf '%s\n' '=== iomem ==='
