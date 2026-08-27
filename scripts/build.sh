@@ -10,6 +10,8 @@ readonly BUILDROOT_VERSION="2025.02.2"
 readonly BUILDROOT_SHA256="4a74e9a6f82ef8660ae2ef865d0ad61a4e9ccd67e2aeef885cae1165581ed5ac"
 readonly KERNEL_VERSION="6.2"
 readonly KERNEL_SHA256="74862fa8ab40edae85bb3385c0b71fe103288bce518526d63197800b3cbdecb1"
+readonly ACX_REPOSITORY="https://github.com/piernov/acx-mac80211.git"
+readonly ACX_COMMIT="a282ba2502ac3b10cb6dbf16a35f7ad54e759779"
 readonly HARET_VERSION="2011-06-07-rx1950"
 readonly HARET_SHA256="5831d7cc8aba6ebd08709893101deca9da78e38ecde519a57adedfb164c86902"
 readonly KERNEL_OFFSET=0x1000000
@@ -49,6 +51,20 @@ prepare_kernel() {
     if [[ ! -d "${source}" ]]; then
         tar --extract --file "${archive}" --directory "${BUILD_DIR}"
     fi
+    printf '%s\n' "${source}"
+}
+
+prepare_acx() {
+    require git
+    local source="${BUILD_DIR}/acx-mac80211"
+    if [[ ! -d "${source}/.git" ]]; then
+        rm -rf "${source}"
+        git clone --filter=blob:none --no-checkout "${ACX_REPOSITORY}" "${source}"
+    fi
+    git -C "${source}" fetch --force --depth=1 origin "${ACX_COMMIT}"
+    git -C "${source}" checkout --force --detach "${ACX_COMMIT}"
+    [[ "$(git -C "${source}" rev-parse HEAD)" == "${ACX_COMMIT}" ]] ||
+        die "ACX source is not pinned to ${ACX_COMMIT}"
     printf '%s\n' "${source}"
 }
 
@@ -109,6 +125,12 @@ validate_kernel_config() {
         'CONFIG_MACH_RX1950=y'
         'CONFIG_ATAGS=y'
         'CONFIG_UNUSED_BOARD_FILES=y'
+        'CONFIG_MODULES=y'
+        'CONFIG_FW_LOADER=y'
+        'CONFIG_WIRELESS=y'
+        'CONFIG_CFG80211=y'
+        'CONFIG_MAC80211=y'
+        'CONFIG_LEDS_TRIGGER_NETDEV=y'
         'CONFIG_DMADEVICES=y'
         'CONFIG_S3C24XX_DMAC=y'
         'CONFIG_MMC_S3C=y'
@@ -140,9 +162,48 @@ validate_kernel_binary() {
         die "linked kernel does not contain the RX1950 UART trace markers"
 }
 
+build_wlan_modules() {
+    local kernel_source="$1" kernel_out="$2"
+    local acx_source module_source module_root kernel_release
+
+    acx_source="$(prepare_acx)"
+    module_source="${ROOT_DIR}/kernel/modules/rx1950-acx"
+
+    # Use the ACX project's own wrapper so its CONFIG_ACX_* command-line
+    # symbols are also emitted as preprocessor defines.  Only the slave-memory
+    # backend is built; PCI and USB ACX transports are deliberately excluded.
+    make -C "${acx_source}" \
+        KERNELDIR="${kernel_out}" \
+        ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" \
+        ACX_GIT_VERSION="${ACX_COMMIT}" \
+        EXTRA_KCONFIG='CONFIG_ACX_MAC80211=m CONFIG_ACX_MAC80211_MEM=m CONFIG_ACX_MAC80211_PCI=n CONFIG_ACX_MAC80211_USB=n' \
+        -j"$(nproc)"
+
+    make -C "${kernel_source}" O="${kernel_out}" \
+        ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" \
+        M="${module_source}" -j"$(nproc)" modules
+
+    test -s "${acx_source}/acx-mac80211.ko" || die "ACX100 slave-memory module was not built"
+    test -s "${module_source}/rx1950_acx.ko" || die "RX1950 ACX platform module was not built"
+    "${CROSS_COMPILE}readelf" -h "${acx_source}/acx-mac80211.ko" | grep -Eq 'Machine:[[:space:]]+ARM' ||
+        die "ACX100 module is not ARM ELF"
+    "${CROSS_COMPILE}readelf" -h "${module_source}/rx1950_acx.ko" | grep -Eq 'Machine:[[:space:]]+ARM' ||
+        die "RX1950 ACX module is not ARM ELF"
+
+    kernel_release="$(make -s -C "${kernel_source}" O="${kernel_out}" ARCH=arm kernelrelease)"
+    module_root="${BUILD_DIR}/rx1950-module-root"
+    rm -rf "${module_root}"
+    mkdir -p "${module_root}/lib/modules/${kernel_release}/extra"
+    cp "${acx_source}/acx-mac80211.ko" "${module_root}/lib/modules/${kernel_release}/extra/"
+    cp "${module_source}/rx1950_acx.ko" "${module_root}/lib/modules/${kernel_release}/extra/"
+    tar -C "${module_root}" -cf "${OUTPUT_DIR}/kernel-modules.tar" .
+}
+
 build_kernel() {
     require make
     require grep
+    require tar
+    require git
     require "${CROSS_COMPILE}gcc"
     local source
     source="$(prepare_kernel)"
@@ -159,8 +220,9 @@ build_kernel() {
     printf '%s\n' 'CONFIG_CMDLINE_FORCE=y' >> "${out}/.config"
     make -C "${source}" O="${out}" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" olddefconfig
     validate_kernel_config "${out}/.config"
-    make -C "${source}" O="${out}" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" -j"$(nproc)" zImage
+    make -C "${source}" O="${out}" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" -j"$(nproc)" zImage modules_prepare
     validate_kernel_binary "${out}/vmlinux" "${out}/vmlinux.nm"
+    build_wlan_modules "${source}" "${out}"
     cp "${out}/arch/arm/boot/zImage" "${OUTPUT_DIR}/zImage"
     cp "${out}/.config" "${OUTPUT_DIR}/kernel.config"
 }
@@ -186,9 +248,6 @@ validate_zimage_placement() {
     local image="$1" gzip_offset inflated_size available
     gzip_offset="$(LC_ALL=C grep --text --byte-offset --only-matching $'\x1f\x8b\x08' "${image}" | head --lines=1 | cut --delimiter=: --fields=1)"
     [[ "${gzip_offset}" =~ ^[0-9]+$ ]] || die "cannot locate gzip payload in ${image}"
-    # zImage appends an ARM boot trailer after the gzip member. GNU gzip
-    # reports that trailer with status 2 even though it has emitted the full
-    # decompressed kernel, so count the stream with pipefail disabled here.
     inflated_size="$(
         set +o pipefail
         tail --bytes="+$((gzip_offset + 1))" "${image}" | gzip --decompress --stdout 2>/dev/null | wc --bytes
@@ -201,6 +260,7 @@ validate_zimage_placement() {
 assemble_image() {
     require dd; require parted; require mkfs.vfat; require mcopy; require debugfs; require e2fsck; require sha256sum; require xz
     [[ -f "${OUTPUT_DIR}/zImage" ]] || die "kernel artifact is not available"
+    [[ -f "${OUTPUT_DIR}/kernel-modules.tar" ]] || die "kernel module bundle is not available"
     [[ -f "${OUTPUT_DIR}/rootfs.ext2" ]] || die "root filesystem artifact is not available"
     validate_zimage_placement "${OUTPUT_DIR}/zImage"
 
@@ -219,6 +279,7 @@ assemble_image() {
     mcopy -i "${bootfs}" "${haret_log_trigger}" ::earlyharetlog.txt
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/startup.txt" ::startup.txt
     mcopy -i "${bootfs}" "${OUTPUT_DIR}/zImage" ::zImage
+    mcopy -i "${bootfs}" "${OUTPUT_DIR}/kernel-modules.tar" ::kernel-modules.tar
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/README.txt" ::README.txt
 
     e2fsck -fp "${OUTPUT_DIR}/rootfs.ext2"
@@ -239,6 +300,8 @@ assemble_image() {
         printf 'build=%s\n' "${BUILD_ID:-local}"
         printf 'buildroot=%s\n' "${BUILDROOT_VERSION}"
         printf 'kernel=%s\n' "${KERNEL_VERSION}"
+        printf 'acx-source=%s@%s\n' "${ACX_REPOSITORY}" "${ACX_COMMIT}"
+        printf 'acx-firmware=bundled:no\n'
         printf 'haret-version=%s\n' "${HARET_VERSION}"
         printf 'haret-sha256=%s\n' "${HARET_SHA256}"
         printf 'image=%s\n' "${IMAGE_NAME}.img"
