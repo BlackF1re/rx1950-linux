@@ -71,7 +71,9 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Next engineering release: ${version}" >> "$GITHUB_STEP_SUMMARY"
       - name: Validate source contract
-        run: bash scripts/validate.sh source
+        run: |
+          bash scripts/validate.sh source
+          bash scripts/validate-peripherals.sh source
 
   rootfs:
     name: Root filesystem
@@ -97,6 +99,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip
       - name: Build root filesystem
         run: bash scripts/build.sh rootfs
+      - name: Validate root filesystem contract
+        run: bash scripts/validate-peripherals.sh rootfs output/buildroot.config
       - name: Record root filesystem digest
         run: sha256sum output/rootfs.ext2 output/buildroot.config > output/rootfs.SHA256SUMS
       - uses: actions/upload-artifact@v4
@@ -122,6 +126,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev gcc-arm-linux-gnueabi curl xz-utils
       - name: Build boot kernel
         run: bash scripts/build.sh kernel
+      - name: Validate peripheral kernel contract
+        run: bash scripts/validate-peripherals.sh kernel output/kernel.config
       - name: Record kernel digest
         run: sha256sum output/zImage output/kernel.config > output/kernel.SHA256SUMS
       - uses: actions/upload-artifact@v4
@@ -161,7 +167,9 @@ jobs:
       - name: Assemble SD image
         run: bash scripts/build.sh image
       - name: Verify sealed image
-        run: bash scripts/validate.sh image
+        run: |
+          bash scripts/validate.sh image
+          bash scripts/validate-peripherals.sh image
       - uses: actions/upload-artifact@v4
         with:
           name: rx1950-linux-${{ needs.plan.outputs.id }}
