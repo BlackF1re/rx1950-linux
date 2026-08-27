@@ -1,13 +1,15 @@
 diff --git a/drivers/tty/serial/samsung_tty.c b/drivers/tty/serial/samsung_tty.c
 --- a/drivers/tty/serial/samsung_tty.c
 +++ b/drivers/tty/serial/samsung_tty.c
-@@ -161,3 +161,5 @@ struct s3c24xx_uart_port {
- };
+@@ -1237,4 +1237,7 @@ static void apple_s5l_serial_shutdown(struct uart_port *port)
+ }
  
- static void s3c24xx_serial_tx_chars(struct s3c24xx_uart_port *ourport);
 +static void s3c24xx_serial_resetport(struct uart_port *port,
 +				     const struct s3c2410_uartcfg *cfg);
-@@ -1241,8 +1243,15 @@ static int s3c24xx_serial_startup(struct uart_port *port)
++
+ static int s3c24xx_serial_startup(struct uart_port *port)
+ {
+@@ -1241,8 +1244,15 @@ static int s3c24xx_serial_startup(struct uart_port *port)
  	struct s3c24xx_uart_port *ourport = to_ourport(port);
  	int ret;
  
@@ -23,7 +25,7 @@ diff --git a/drivers/tty/serial/samsung_tty.c b/drivers/tty/serial/samsung_tty.c
  	ret = request_irq(ourport->rx_irq, s3c24xx_serial_rx_irq, 0,
  			  s3c24xx_serial_portname(port), ourport);
  
-@@ -1252,11 +1261,13 @@ static int s3c24xx_serial_startup(struct uart_port *port)
+@@ -1252,11 +1262,13 @@ static int s3c24xx_serial_startup(struct uart_port *port)
  	}
  
  	ourport->rx_claimed = 1;
@@ -39,7 +41,7 @@ diff --git a/drivers/tty/serial/samsung_tty.c b/drivers/tty/serial/samsung_tty.c
  	ret = request_irq(ourport->tx_irq, s3c24xx_serial_tx_irq, 0,
  			  s3c24xx_serial_portname(port), ourport);
  
-@@ -1266,10 +1277,17 @@ static int s3c24xx_serial_startup(struct uart_port *port)
+@@ -1266,10 +1278,17 @@ static int s3c24xx_serial_startup(struct uart_port *port)
  	}
  
  	ourport->tx_claimed = 1;
@@ -59,7 +61,7 @@ diff --git a/drivers/tty/serial/samsung_tty.c b/drivers/tty/serial/samsung_tty.c
  
  	return ret;
  
-@@ -1843,16 +1861,38 @@ static void s3c24xx_serial_resetport(struct uart_port *port,
+@@ -1843,16 +1862,38 @@ static void s3c24xx_serial_resetport(struct uart_port *port,
  {
  	const struct s3c24xx_uart_info *info = s3c24xx_port_to_info(port);
  	unsigned long ucon = rd_regl(port, S3C2410_UCON);
@@ -99,7 +101,7 @@ diff --git a/drivers/tty/serial/samsung_tty.c b/drivers/tty/serial/samsung_tty.c
  }
  
  #ifdef CONFIG_ARM_S3C24XX_CPUFREQ
-@@ -2081,8 +2121,21 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
+@@ -2081,8 +2122,21 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 -	/* reset the fifos (and setup the uart) */
 -	dev_notice(port->dev, "RX1950 UART%d: resetting controller\n",
 -		   port->line);
