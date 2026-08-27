@@ -28,7 +28,7 @@ in a release claim.
 | WLAN | Integrated IEEE 802.11b TI TNETW1100B on a memory-mapped bus; its legacy `acx-mem` driver and board glue are not in Linux 6.2 | Driver port required | Port the driver and GPIO power/reset/IRQ wiring, then scan, associate, DHCP, DNS, transfer and reconnect. |
 | Bluetooth | No integrated controller | Not applicable | SDIO Bluetooth cards are separate optional peripherals. |
 | Infrared | IrDA SIR/CIR port | Planned | `irda` stack discovery and bidirectional transfer with a known peer. |
-| USB device | S3C2410 UDC via 22-pin connector; RNDIS Ethernet gadget is enabled in the engineering image | Experimental | Windows enumerates the USB network adapter; `192.168.7.2` answers SSH after a cold boot; disconnect and reconnect work cleanly. |
+| USB device | S3C2410 UDC via 22-pin connector; CDC-NCM Ethernet gadget is enabled in the engineering image for native Windows 11/Linux host support | Experimental | Windows 11 enumerates the inbox `UsbNcm.sys` network adapter without an external INF; `192.168.7.2` answers SSH after a cold boot; disconnect and reconnect work cleanly. |
 | USB host | Connector/dock capability is not assumed | Research required | Identify electrical support before exposing a host-mode configuration. |
 | Serial | Dock connector RS-232 path | Research required | Identify cable and signal levels; console transfer test after confirmation. |
 | SDIO accessories | Slot supports SDIO electrically | Experimental | Each card model gets an individual driver, firmware, power and stability test. |
@@ -51,7 +51,7 @@ in a release claim.
 | HaRET launch | Experimental | The machine type is passed by HaRET and the boot probe records a userspace milestone on the FAT partition. Verify this on physical hardware before claiming boot support. |
 | FAT boot partition | Planned | Windows Mobile can read all shipped boot files and checksum manifest. |
 | Linux root partition | Experimental | ext4 mounts read-write, preserves the boot partition and safely grows to the end of a larger card on first boot. Verify the full path on physical media. |
-| Console and SSH | Planned | The boot probe must record rootfs and USB milestones first; then verify local framebuffer terminal and SSH over USB RNDIS after a cold boot. |
+| Console and SSH | Planned | The boot probe must record rootfs and USB milestones first; then verify local framebuffer terminal and SSH over USB CDC-NCM after a cold boot. |
 | Package management | Planned | `opkg update`, signature check, install, remove and recovery from interrupted transaction. |
 | Graphical session | Experimental | The image includes the Matchbox session (TinyX, launcher, panel and on-screen keyboard); verify QVGA startup, stylus, physical navigation, idle RAM and clean exit on the device. |
 
