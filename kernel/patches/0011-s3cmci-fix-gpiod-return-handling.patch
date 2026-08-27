@@ -1,0 +1,19 @@
+diff --git a/drivers/mmc/host/s3cmci.c b/drivers/mmc/host/s3cmci.c
+--- a/drivers/mmc/host/s3cmci.c
++++ b/drivers/mmc/host/s3cmci.c
+@@ -1451,13 +1451,13 @@
+ 	/* If we get -ENOENT we have no card detect GPIO line */
+ 	ret = mmc_gpiod_request_cd(mmc, "cd", 0, false, 0);
+-	if (ret != -ENOENT) {
++	if (ret && ret != -ENOENT) {
+ 		dev_err(&pdev->dev, "error requesting GPIO for CD %d\n",
+ 			ret);
+ 		return ret;
+ 	}
+ 
+ 	ret = mmc_gpiod_request_ro(host->mmc, "wp", 0, 0);
+-	if (ret != -ENOENT) {
++	if (ret && ret != -ENOENT) {
+ 		dev_err(&pdev->dev, "error requesting GPIO for WP %d\n",
+ 			ret);
+ 		return ret;

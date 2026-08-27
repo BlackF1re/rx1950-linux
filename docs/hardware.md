@@ -14,12 +14,13 @@ in a release claim.
 | Internal flash | 64 MiB ROM / NAND, reserved for Windows Mobile | Protected | Verify no boot, install, update or recovery command writes it. |
 | SD/MMC/SDIO | S3C24xx MCI; 1-bit/4-bit SD, MMC and SDIO slot | Planned | Detect card, boot rootfs, read/write/remount, card-detect and write-protect. |
 | LCD | 3.5-inch transflective 65k-colour QVGA TFT; S3C24xx framebuffer | Planned | Native 240x320 console and graphical session, orientation, long-running redraw. |
-| Backlight | PWM-controlled panel backlight | Planned | Brightness range, blank/unblank and recovery after suspend. |
+| Backlight | PWM-controlled panel backlight | Experimental | Brightness control is verified on hardware; still verify blank/unblank and recovery after suspend. |
 | Touchscreen | SoC ADC/resistive single-touch controller | Planned | Calibration, edge accuracy, drag, wake input and persistent calibration. |
 | D-pad and action key | GPIO keys: up, down, left, right, enter | Planned | Every key produces its expected evdev code in console and graphical session. |
 | Application keys | Power, record, calendar, contacts, mail and WLAN GPIO keys | Planned | Event mapping, long press where applicable, and non-destructive power action. |
-| LEDs | Red, green and WLAN indicators on GPIO | Planned | Trigger, manual on/off and safe power-state transition. |
+| LEDs | Red, green and WLAN indicators on GPIO | Experimental | Manual on/off is verified on hardware; still verify triggers and safe power-state transitions. |
 | RTC | S3C24xx RTC | Planned | Set/read UTC, retain time over reset and restore system clock at boot. |
+| Hardware monitoring | S3C2442 ADC via `s3c-hwmon`; scaled battery voltage plus raw ADC channels 0-7 | Experimental | Run `sensors` and `rx1950-sensors`, verify stable readings alongside touchscreen/battery use, and compare battery voltage against a physical reading. |
 
 ## Connectivity and expansion
 
@@ -37,7 +38,7 @@ in a release claim.
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| Audio codec | UDA1380 on I2C/I2S | Planned | Stereo playback to 3.5 mm jack, speaker route, levels and underrun-free playback. |
+| Audio codec | UDA1380 on I2C/I2S; S3C2442 DMA platform device required for PCM transfers | Planned | Stereo playback to 3.5 mm jack, speaker route, levels and underrun-free playback. |
 | Microphone | Integrated mono microphone | Planned | Capture, playback and gain/noise verification. |
 | Speaker and headphone detect | GPIO-routed speaker power and headphone sense | Planned | Route switching and no audible pop across power/suspend transitions. |
 | Battery | Removable 1100 mAh Li-ion pack | Planned | Capacity, voltage, charging state and low-battery behaviour against physical readings. |
@@ -52,7 +53,7 @@ in a release claim.
 | FAT boot partition | Planned | Windows Mobile can read all shipped boot files and checksum manifest. |
 | Linux root partition | Experimental | ext4 mounts read-write, preserves the boot partition and safely grows to the end of a larger card on first boot. Verify the full path on physical media. |
 | Console and SSH | Planned | The boot probe must record rootfs and USB milestones first; then verify local framebuffer terminal and SSH over USB CDC-NCM after a cold boot. |
-| Package management | Planned | `opkg update`, signature check, install, remove and recovery from interrupted transaction. |
+| Package management | Planned | `opkg update`, signature check, install, remove and recovery from interrupted transaction once the project feed is published. |
 | Graphical session | Experimental | The image includes the Matchbox session (TinyX, launcher, panel and on-screen keyboard); verify QVGA startup, stylus, physical navigation, idle RAM and clean exit on the device. |
 
 ## Sources and verification record
@@ -64,9 +65,12 @@ upstream board file enumerates the platform devices, GPIO key map, UDA1380
 codec, MCI wiring, framebuffer/backlight, RTC, USB device controller, NAND,
 battery and LEDs. The kernel configuration selects the corresponding in-tree
 drivers as built-ins, so the image does not depend on an unshipped module tree.
-The TI WLAN driver remains an explicit exception: it requires a maintained
-port before it can be claimed as available. The Linux Kernel Driver Database
-records the in-tree machine configuration through Linux 6.2.
+The engineering kernel additionally exposes the S3C2442 ADC through hwmon while
+retaining the existing battery driver; raw ADC channels remain available for
+board investigation. The TI WLAN driver remains an explicit exception: it
+requires a maintained port before it can be claimed as available. The Linux
+Kernel Driver Database records the in-tree machine configuration through Linux
+6.2.
 
 Primary references:
 
