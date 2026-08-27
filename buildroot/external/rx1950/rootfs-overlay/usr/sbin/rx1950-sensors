@@ -1,0 +1,48 @@
+#!/bin/sh
+# Report standard hwmon data plus the RX1950-specific raw ADC and power data.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+printf '%s\n' '=== lm-sensors ==='
+if command -v sensors >/dev/null 2>&1; then
+	sensors 2>/dev/null || true
+else
+	printf '%s\n' 'sensors command is unavailable'
+fi
+
+printf '\n%s\n' '=== S3C ADC raw channels ==='
+found=0
+for attr in /sys/class/hwmon/hwmon*/adc*_raw; do
+	[ -r "$attr" ] || continue
+	found=1
+	hwmon="${attr%/*}"
+	name="$(cat "$hwmon/name" 2>/dev/null || basename "$hwmon")"
+	printf '%s %s=%s\n' "$name" "$(basename "$attr")" "$(cat "$attr" 2>/dev/null || printf '?')"
+done
+[ "$found" -eq 1 ] || printf '%s\n' 'none'
+
+printf '\n%s\n' '=== thermal zones ==='
+found=0
+for zone in /sys/class/thermal/thermal_zone*; do
+	[ -d "$zone" ] || continue
+	found=1
+	printf '%s type=%s temp=%s\n' \
+		"$(basename "$zone")" \
+		"$(cat "$zone/type" 2>/dev/null || printf '?')" \
+		"$(cat "$zone/temp" 2>/dev/null || printf '?')"
+done
+[ "$found" -eq 1 ] || printf '%s\n' 'none'
+
+printf '\n%s\n' '=== power supplies ==='
+found=0
+for supply in /sys/class/power_supply/*; do
+	[ -d "$supply" ] || continue
+	found=1
+	printf '%s\n' "--- $(basename "$supply")"
+	for attr in status online voltage_now current_now charge_now capacity; do
+		[ -r "$supply/$attr" ] || continue
+		printf '%s=%s\n' "$attr" "$(cat "$supply/$attr" 2>/dev/null || printf '?')"
+	done
+done
+[ "$found" -eq 1 ] || printf '%s\n' 'none'

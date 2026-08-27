@@ -38,12 +38,22 @@ network management, time, SSH and the optional graphical session. Diagnostic,
 debug and graphical packages are opt-in. Persistent user data and the package
 database reside on the SD root/data filesystem.
 
-The base image includes `opkg` so optional software can be installed without
-inflating the default root filesystem. A project-hosted signed package feed,
-package keys, feed URLs and trust policy are a release gate; they will be
-versioned alongside the release manifest before packages are published.
-Packages are built for ARMv4T, declare their installed size and dependencies,
-and must not assume a desktop-class memory budget.
+The base image includes `opkg`, and the engineering image ships a valid local
+destination/list configuration so its state is deterministic. It deliberately
+contains no remote `src` entry: Buildroot does not produce a compatible binary
+package repository, and mixing an unrelated OpenWrt or Entware feed with this
+ARMv4T/musl userspace would violate the ABI contract. A project-hosted signed
+package feed, package keys, feed URLs and trust policy are a release gate; they
+will be versioned alongside the release manifest before packages are
+published. Packages are built for ARMv4T, declare their installed size and
+dependencies, and must not assume a desktop-class memory budget.
+
+Hardware monitoring uses the in-tree S3C ADC hwmon driver. Battery-voltage ADC
+channel 0 is exported with the same board calibration used by the battery
+driver, while all eight ADC channels are also exposed as raw values for board
+investigation. Standard hwmon consumers use `lm-sensors`; `rx1950-sensors`
+adds the raw ADC, thermal-zone and power-supply views without probing unknown
+hardware.
 
 ## Kernel policy
 
@@ -53,6 +63,12 @@ revision, cross compiler and board configuration. Board changes are stored as
 small, numbered patches with rationale and an on-device test reference. Any
 forward-port beyond that baseline is an explicit engineering effort, not a
 version-only upgrade.
+
+The RX1950 board registers the S3C2442 DMA controller before the I2S device so
+ASoC can acquire its RX/TX channels. The SD/MMC host remains explicitly pinned
+to its already-proven PIO transfer path; Linux 6.2 still describes the S3C MCI
+DMA mode as needing debugging, so audio DMA must not silently change storage
+behaviour.
 
 ## Artifact contract
 

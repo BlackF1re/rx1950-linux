@@ -1,0 +1,65 @@
+diff --git a/arch/arm/mach-s3c/Kconfig.s3c24xx b/arch/arm/mach-s3c/Kconfig.s3c24xx
+--- a/arch/arm/mach-s3c/Kconfig.s3c24xx
++++ b/arch/arm/mach-s3c/Kconfig.s3c24xx
+@@ -567,5 +567,6 @@
+ 	select S3C2410_IOTIMING if ARM_S3C2440_CPUFREQ
+ 	select S3C2440_XTAL_16934400
++	select S3C_DEV_HWMON
+ 	select S3C_DEV_NAND
+ 	help
+ 	  Say Y here if you're using HP iPAQ rx1950
+diff --git a/arch/arm/mach-s3c/mach-rx1950.c b/arch/arm/mach-s3c/mach-rx1950.c
+--- a/arch/arm/mach-s3c/mach-rx1950.c
++++ b/arch/arm/mach-s3c/mach-rx1950.c
+@@ -43,5 +43,6 @@
+ #include <linux/platform_data/touchscreen-s3c2410.h>
+ #include <linux/platform_data/usb-s3c2410_udc.h>
+ #include <linux/platform_data/fb-s3c2410.h>
++#include <linux/platform_data/hwmon-s3c.h>
+ 
+ #include <sound/uda1380.h>
+@@ -349,5 +350,21 @@
+ 	.current_mult = 2900,
+ 	.internal_impedance = 200,
++};
++
++/*
++ * ADC channel 0 is the battery-voltage divider.  The battery driver converts
++ * the same raw sample to microvolts with a factor of 4235; hwmon expects
++ * millivolts for in*_input, hence the corresponding 4235/1000 scale.
++ * All ADC channels are additionally exposed unscaled by SENSORS_S3C_RAW.
++ */
++static struct s3c_hwmon_chcfg rx1950_hwmon_battery_voltage = {
++	.name = "main-battery",
++	.mult = 4235,
++	.div = 1000,
++};
++
++static struct s3c_hwmon_pdata rx1950_hwmon_pdata = {
++	.in[0] = &rx1950_hwmon_battery_voltage,
+ };
+ 
+ static struct platform_device rx1950_battery = {
+@@ -773,5 +790,6 @@
+ 	&s3c_device_wdt,
+ 	&s3c_device_i2c0,
++	&s3c2410_device_dma,
+ 	&s3c_device_iis,
+ 	&s3c_device_usbgadget,
+ 	&s3c_device_rtc,
+@@ -778,6 +796,7 @@
+ 	&s3c_device_nand,
+ 	&s3c_device_sdi,
+ 	&s3c_device_adc,
++	&s3c_device_hwmon,
+ 	&s3c_device_ts,
+ 	&samsung_device_pwm,
+ 	&rx1950_backlight,
+@@ -816,6 +834,7 @@
+ 	s3c24xx_fb_set_platdata(&rx1950_lcd_cfg);
+ 	s3c24xx_udc_set_platdata(&rx1950_udc_cfg);
+ 	s3c24xx_ts_set_platdata(&rx1950_ts_cfg);
++	s3c_hwmon_set_platdata(&rx1950_hwmon_pdata);
+ 	gpiod_add_lookup_table(&rx1950_mmc_gpio_table);
+ 	s3c24xx_mci_set_platdata(&rx1950_mmc_cfg);
+ 	s3c_i2c0_set_platdata(NULL);
