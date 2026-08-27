@@ -29,7 +29,16 @@ command -v sfdisk >/dev/null 2>&1 || fail "sfdisk is unavailable"
 command -v resize2fs >/dev/null 2>&1 || fail "resize2fs is unavailable"
 command -v partx >/dev/null 2>&1 || fail "partx is unavailable"
 
-grep -q "^${ROOT} / " /proc/mounts || fail "root is not ${ROOT}"
+# The kernel mounts root=/dev/mmcblk0p2 as /dev/root, so /proc/mounts does
+# not retain the original block-device name.  Compare the authoritative
+# major:minor identity instead of the cosmetic mount source.
+root_dev="$(awk '$5 == "/" { print $3; exit }' /proc/self/mountinfo 2>/dev/null)" ||
+    fail "cannot identify mounted root device"
+expected_root_dev="$(cat /sys/class/block/mmcblk0p2/dev 2>/dev/null)" ||
+    fail "cannot identify ${ROOT} device number"
+[ -n "${root_dev}" ] && [ "${root_dev}" = "${expected_root_dev}" ] ||
+    fail "mounted root ${root_dev:-unknown} does not match ${ROOT} (${expected_root_dev:-unknown})"
+
 boot_start="$(cat /sys/class/block/mmcblk0p1/start 2>/dev/null)" || fail "cannot read boot partition"
 boot_size="$(read_sector_count /sys/class/block/mmcblk0p1)" || fail "cannot read boot size"
 root_start="$(cat /sys/class/block/mmcblk0p2/start 2>/dev/null)" || fail "cannot read root partition"
