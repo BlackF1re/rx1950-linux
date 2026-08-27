@@ -28,6 +28,36 @@ record() {
     fi
 }
 
+set_backlight_max() {
+    found=0
+    for backlight in /sys/class/backlight/*; do
+        [ -d "$backlight" ] || continue
+        found=1
+        max="$(cat "$backlight/max_brightness" 2>/dev/null || true)"
+        if [ -n "$max" ] && [ -w "$backlight/brightness" ]; then
+            printf '%s\n' "$max" > "$backlight/brightness" 2>/dev/null || true
+        fi
+    done
+    return $((found == 0))
+}
+
+snapshot_backlight() {
+    printf '%s\n' '=== backlight ==='
+    found=0
+    for backlight in /sys/class/backlight/*; do
+        [ -d "$backlight" ] || continue
+        found=1
+        printf 'device=%s\n' "$(basename "$backlight")"
+        for field in brightness actual_brightness max_brightness bl_power type; do
+            if [ -r "$backlight/$field" ]; then
+                printf '%s=' "$field"
+                cat "$backlight/$field" 2>/dev/null || true
+            fi
+        done
+    done
+    [ "$found" -eq 1 ] || printf '%s\n' 'none'
+}
+
 snapshot_kernel() {
     mount_boot || return 0
 
@@ -38,6 +68,7 @@ snapshot_kernel() {
         cat /proc/cmdline 2>/dev/null || true
         printf '%s\n' '=== uptime ==='
         cat /proc/uptime 2>/dev/null || true
+        snapshot_backlight
         printf '%s\n' '=== interrupts ==='
         cat /proc/interrupts 2>/dev/null || true
         printf '%s\n' '=== iomem ==='
@@ -63,20 +94,24 @@ set_led() {
 
 case "${1:-}" in
     early-userspace)
+        set_backlight_max || true
         set_led Green 1
         record "early-userspace-reached"
         snapshot_kernel
         ;;
     rootfs-ready)
+        set_backlight_max || true
         set_led Blue 1
         record "rootfs-ready"
         snapshot_kernel
         ;;
     usb-network-ready|usb0-unavailable)
+        set_backlight_max || true
         record "$1"
         snapshot_kernel
         ;;
     *)
+        set_backlight_max || true
         record "unknown-probe-event:${1:-none}"
         snapshot_kernel
         ;;

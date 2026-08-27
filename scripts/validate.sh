@@ -91,6 +91,26 @@ validate_abi_configs() {
         die "rootfs libc/toolchain contract changed"
 }
 
+validate_console_backlight_configs() {
+    local kernel_config="$1" buildroot_config="$2"
+
+    grep -qx 'CONFIG_BACKLIGHT_CLASS_DEVICE=y' "${kernel_config}" ||
+        die "kernel dropped the backlight class; pwm-backlight cannot probe"
+    grep -qx 'CONFIG_BACKLIGHT_PWM=y' "${kernel_config}" ||
+        die "kernel dropped the RX1950 PWM backlight driver"
+    grep -qx 'CONFIG_PWM_SAMSUNG=y' "${kernel_config}" ||
+        die "kernel dropped the Samsung PWM controller"
+    grep -qx '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set' "${kernel_config}" ||
+        die "Samsung serial console was unexpectedly re-enabled"
+
+    grep -qx 'BR2_TARGET_GENERIC_GETTY=y' "${buildroot_config}" ||
+        die "rootfs lost the local getty"
+    grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${buildroot_config}" ||
+        die "rootfs getty is not attached to framebuffer VT tty1"
+    ! grep -q 'BR2_TARGET_GENERIC_GETTY_PORT="ttySAC0"' "${buildroot_config}" ||
+        die "rootfs still respawns getty on unavailable ttySAC0"
+}
+
 case "${1:-source}" in
   source)
     test -s "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
@@ -105,6 +125,9 @@ case "${1:-source}" in
     grep -qx 'BR2_SOFT_FLOAT=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_ARM_INSTRUCTIONS_ARM=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_TOOLCHAIN_BUILDROOT_MUSL=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_TARGET_GENERIC_GETTY=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    ! grep -q 'ttySAC0' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'CONFIG_ARCH_MULTI_V4T=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_ARCH_MULTI_V7 is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_UNUSED_BOARD_FILES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
@@ -114,6 +137,9 @@ case "${1:-source}" in
     grep -qx 'CONFIG_DMADEVICES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_S3C24XX_DMAC=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_MMC_S3C=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_BACKLIGHT_CLASS_DEVICE=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_BACKLIGHT_PWM=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_PWM_SAMSUNG=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_LOG_BUF_SHIFT=17' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_DEBUG_KERNEL=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_DEBUG_DRIVER=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
@@ -136,6 +162,8 @@ case "${1:-source}" in
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
     grep -Fq 'dmesg.log' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
     grep -Fq '/proc/interrupts' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
+    grep -Fq 'set_backlight_max' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
+    grep -Fq '/sys/class/backlight/' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
     git -C "${ROOT_DIR}" diff --check
     ;;
   image)
@@ -150,11 +178,13 @@ case "${1:-source}" in
     test -s "${OUTPUT_DIR}/kernel.config"
     test -s "${OUTPUT_DIR}/buildroot.config"
     validate_abi_configs "${OUTPUT_DIR}/kernel.config" "${OUTPUT_DIR}/buildroot.config"
+    validate_console_backlight_configs "${OUTPUT_DIR}/kernel.config" "${OUTPUT_DIR}/buildroot.config"
     grep -qx 'BR2_GCC_TARGET_CPU="arm920t"' "${OUTPUT_DIR}/buildroot.config" ||
       die "generated rootfs toolchain is not pinned to ARM920T"
 
     busybox_elf="$(mktemp)"
-    trap 'rm -f "${busybox_elf}"' EXIT
+    inittab_file="$(mktemp)"
+    trap 'rm -f "${busybox_elf}" "${inittab_file}"' EXIT
     debugfs -R "dump -p /bin/busybox ${busybox_elf}" "${OUTPUT_DIR}/rootfs.ext2" >/dev/null 2>&1 ||
       die "cannot extract BusyBox from rootfs for ABI verification"
     readelf -h "${busybox_elf}" | grep -Eq 'Machine:[[:space:]]+ARM' ||
@@ -163,6 +193,13 @@ case "${1:-source}" in
       die "BusyBox is not ARM EABI5 soft-float"
     readelf -A "${busybox_elf}" | grep -Fq 'Tag_CPU_arch: v4T' ||
       die "BusyBox contains the wrong ARM ISA level; ARM920T requires ARMv4T"
+
+    debugfs -R "dump -p /etc/inittab ${inittab_file}" "${OUTPUT_DIR}/rootfs.ext2" >/dev/null 2>&1 ||
+      die "cannot extract /etc/inittab from rootfs"
+    grep -Eq '^tty1::respawn:' "${inittab_file}" ||
+      die "rootfs does not spawn the local getty on tty1"
+    ! grep -q 'ttySAC0' "${inittab_file}" ||
+      die "rootfs still contains a ttySAC0 respawn entry"
 
     mdir -i "${OUTPUT_DIR}/boot.fat" ::earlyharetlog.txt >/dev/null
     (cd "${OUTPUT_DIR}" && sha256sum --check SHA256SUMS)
