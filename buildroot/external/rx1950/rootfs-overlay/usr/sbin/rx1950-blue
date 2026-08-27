@@ -1,0 +1,52 @@
+#!/bin/sh
+# Keep the RX1950 Blue LED independent from WLAN policy.  It can be driven
+# manually or explicitly attached to wlan traffic using the kernel netdev LED
+# trigger.
+
+set -u
+LED=/sys/class/leds/Blue
+
+need_led() {
+	[ -d "$LED" ] || { printf '%s\n' 'Blue LED is unavailable' >&2; exit 1; }
+}
+
+manual() {
+	value=${1:-0}
+	case "$value" in 0|1) ;; *) printf '%s\n' 'brightness must be 0 or 1' >&2; exit 2 ;; esac
+	echo none > "$LED/trigger"
+	echo "$value" > "$LED/brightness"
+}
+
+wlan() {
+	dev=${1:-wlan0}
+	[ -e "/sys/class/net/$dev" ] || { printf '%s\n' "network device $dev does not exist" >&2; exit 1; }
+	echo netdev > "$LED/trigger"
+	[ ! -w "$LED/device_name" ] || echo "$dev" > "$LED/device_name"
+	[ ! -w "$LED/link" ] || echo 1 > "$LED/link"
+	[ ! -w "$LED/rx" ] || echo 1 > "$LED/rx"
+	[ ! -w "$LED/tx" ] || echo 1 > "$LED/tx"
+}
+
+status() {
+	printf 'brightness='; cat "$LED/brightness"
+	printf 'trigger='; cat "$LED/trigger"
+	for f in device_name link rx tx; do
+		[ -r "$LED/$f" ] || continue
+		printf '%s=' "$f"; cat "$LED/$f"
+	done
+}
+
+need_led
+case "${1:-status}" in
+	manual) manual "${2:-0}" ;;
+	wlan) wlan "${2:-wlan0}" ;;
+	trigger)
+		[ "$#" -eq 2 ] || { printf '%s\n' 'usage: rx1950-blue trigger NAME' >&2; exit 2; }
+		echo "$2" > "$LED/trigger"
+		;;
+	status) status ;;
+	*)
+		printf '%s\n' 'usage: rx1950-blue {manual [0|1]|wlan [interface]|trigger NAME|status}' >&2
+		exit 2
+		;;
+esac
