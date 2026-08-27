@@ -11,6 +11,16 @@ on:
       - 'docs/**'
       - 'README.md'
       - '.github/workflows/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'board/**'
+      - 'buildroot/**'
+      - 'kernel/**'
+      - 'scripts/**'
+      - 'docs/**'
+      - 'README.md'
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       publish:
@@ -123,19 +133,20 @@ jobs:
           restore-keys: |
             rx1950-kernel-sources-${{ runner.os }}-
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev gcc-arm-linux-gnueabi curl xz-utils
-      - name: Build boot kernel
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev gcc-arm-linux-gnueabi curl git xz-utils
+      - name: Build boot kernel and WLAN modules
         run: bash scripts/build.sh kernel
       - name: Validate peripheral kernel contract
         run: bash scripts/validate-peripherals.sh kernel output/kernel.config
       - name: Record kernel digest
-        run: sha256sum output/zImage output/kernel.config > output/kernel.SHA256SUMS
+        run: sha256sum output/zImage output/kernel.config output/kernel-modules.tar > output/kernel.SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: kernel-${{ needs.plan.outputs.id }}
           path: |
             output/zImage
             output/kernel.config
+            output/kernel-modules.tar
             output/kernel.SHA256SUMS
           if-no-files-found: error
           compression-level: 0
@@ -179,6 +190,7 @@ jobs:
             output/SHA256SUMS
             output/provenance.txt
             output/zImage
+            output/kernel-modules.tar
             board/hp_rx1950/startup.txt
           if-no-files-found: error
 
@@ -207,6 +219,7 @@ jobs:
           checksums="$(find release -type f -name SHA256SUMS -print -quit)"
           provenance="$(find release -type f -name provenance.txt -print -quit)"
           kernel="$(find release -type f -name zImage -print -quit)"
+          modules="$(find release -type f -name kernel-modules.tar -print -quit)"
           startup="$(find release -type f -name startup.txt -print -quit)"
-          test -n "$image" && test -n "$checksums" && test -n "$provenance" && test -n "$kernel" && test -n "$startup"
-          gh release create "$VERSION" "$image" "$checksums" "$provenance" "$kernel" "$startup" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "rx1950-linux $VERSION" --generate-notes
+          test -n "$image" && test -n "$checksums" && test -n "$provenance" && test -n "$kernel" && test -n "$modules" && test -n "$startup"
+          gh release create "$VERSION" "$image" "$checksums" "$provenance" "$kernel" "$modules" "$startup" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "rx1950-linux $VERSION" --generate-notes
