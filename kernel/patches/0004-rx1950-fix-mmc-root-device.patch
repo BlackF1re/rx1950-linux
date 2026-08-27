@@ -19,7 +19,7 @@ diff --git a/arch/arm/mach-s3c/mach-rx1950.c b/arch/arm/mach-s3c/mach-rx1950.c
 diff --git a/drivers/mmc/host/s3cmci.c b/drivers/mmc/host/s3cmci.c
 --- a/drivers/mmc/host/s3cmci.c
 +++ b/drivers/mmc/host/s3cmci.c
-@@ -1358,11 +1358,17 @@ static int s3cmci_probe_pdata(struct s3cmci_host *host)
+@@ -1358,13 +1358,19 @@ static int s3cmci_probe_pdata(struct s3cmci_host *host)
  	}
  
 +	dev_notice(&pdev->dev,
