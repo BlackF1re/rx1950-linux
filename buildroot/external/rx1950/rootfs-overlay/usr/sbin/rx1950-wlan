@@ -1,0 +1,125 @@
+#!/bin/sh
+# Control the optional RX1950 ACX100 WLAN modules without tying the Blue LED
+# to radio state.
+
+set -u
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+PIDFILE=/var/run/wpa_supplicant-rx1950.pid
+CONF=/etc/wpa_supplicant.conf
+
+iface() {
+	for n in /sys/class/net/wlan*; do
+		[ -e "$n" ] || continue
+		basename "$n"
+		return 0
+	done
+	return 1
+}
+
+firmware_ready() {
+	[ -r /lib/firmware/WLANGEN.BIN ] || return 1
+	for f in /lib/firmware/RADIO??.BIN; do
+		[ -r "$f" ] && return 0
+	done
+	return 1
+}
+
+start_radio() {
+	mode=${1:-independent}
+	firmware_ready || {
+		printf '%s\n' 'ACX100 firmware is missing. Run: rx1950-wlan-firmware import  (or fetch)' >&2
+		return 1
+	}
+
+	modprobe acx-mac80211 || return 1
+	case "$mode" in
+		independent) modprobe rx1950_acx ;;
+		gpa11-power)
+			printf '%s\n' 'WARNING: diagnostic GPA11 power mode physically couples WLAN and Blue.' >&2
+			modprobe rx1950_acx gpa11_power=1
+			;;
+		*) printf '%s\n' "unknown start mode: $mode" >&2; return 2 ;;
+	esac || return 1
+
+	attempt=0
+	while [ "$attempt" -lt 20 ]; do
+		ifname="$(iface 2>/dev/null || true)"
+		[ -n "$ifname" ] && break
+		attempt=$((attempt + 1))
+		sleep 1
+	done
+	ifname="$(iface 2>/dev/null || true)"
+	[ -n "$ifname" ] || {
+		printf '%s\n' 'ACX modules loaded but no wlan interface appeared.' >&2
+		printf '%s\n' 'Inspect: dmesg | grep -iE "acx|firmware|wlan"' >&2
+		return 1
+	}
+	ip link set "$ifname" up
+	printf '%s\n' "WLAN ready: $ifname"
+}
+
+stop_radio() {
+	if [ -s "$PIDFILE" ]; then
+		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+		rm -f "$PIDFILE"
+	fi
+	ifname="$(iface 2>/dev/null || true)"
+	[ -z "$ifname" ] || ip link set "$ifname" down 2>/dev/null || true
+	modprobe -r rx1950_acx 2>/dev/null || true
+	modprobe -r acx-mac80211 2>/dev/null || true
+}
+
+status_radio() {
+	printf '%s\n' '=== modules ==='
+	lsmod | grep -E '(^| )(rx1950_acx|acx_mac80211|mac80211)( |$)' || true
+	printf '%s\n' '=== firmware ==='
+	rx1950-wlan-firmware status
+	printf '%s\n' '=== interface ==='
+	ifname="$(iface 2>/dev/null || true)"
+	if [ -n "$ifname" ]; then
+		ip -details link show "$ifname"
+		iw dev "$ifname" info 2>/dev/null || true
+	else
+		printf '%s\n' 'none'
+	fi
+}
+
+scan_radio() {
+	ifname="$(iface 2>/dev/null || true)"
+	[ -n "$ifname" ] || { printf '%s\n' 'no wlan interface' >&2; return 1; }
+	ip link set "$ifname" up || return 1
+	iw dev "$ifname" scan
+}
+
+connect_radio() {
+	ifname="$(iface 2>/dev/null || true)"
+	[ -n "$ifname" ] || { printf '%s\n' 'no wlan interface' >&2; return 1; }
+	[ -r "$CONF" ] || {
+		printf '%s\n' "create $CONF first (for example with wpa_passphrase)" >&2
+		return 1
+	}
+	if [ -s "$PIDFILE" ]; then
+		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+	fi
+	rm -f "$PIDFILE"
+	ip link set "$ifname" up || return 1
+	wpa_supplicant -B -P "$PIDFILE" -i "$ifname" -c "$CONF" || return 1
+	udhcpc -i "$ifname" -b -t 5 -T 2 -A 5
+}
+
+case "${1:-status}" in
+	start) start_radio "${2:-independent}" ;;
+	stop) stop_radio ;;
+	restart) stop_radio; start_radio "${2:-independent}" ;;
+	status) status_radio ;;
+	scan) scan_radio ;;
+	connect) connect_radio ;;
+	*)
+		printf '%s\n' 'usage: rx1950-wlan {start [independent|gpa11-power]|stop|restart|status|scan|connect}' >&2
+		exit 2
+		;;
+esac
