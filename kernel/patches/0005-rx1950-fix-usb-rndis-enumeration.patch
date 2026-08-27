@@ -1,0 +1,127 @@
+diff --git a/arch/arm/mach-s3c/mach-rx1950.c b/arch/arm/mach-s3c/mach-rx1950.c
+--- a/arch/arm/mach-s3c/mach-rx1950.c
++++ b/arch/arm/mach-s3c/mach-rx1950.c
+@@ -650,5 +650,5 @@
+ static struct gpiod_lookup_table rx1950_udc_gpio_table = {
+-	.dev_id = "s3c2410-usbgadget",
++	.dev_id = "s3c2440-usbgadget",
+ 	.table = {
+ 		GPIO_LOOKUP("GPIOG", 5, "vbus", GPIO_ACTIVE_LOW),
+ 		GPIO_LOOKUP("GPIOJ", 5, "pullup", GPIO_ACTIVE_HIGH),
+@@ -827,4 +827,15 @@
+ 						S3C2410_MISCCR_USBSUSPND0 |
+ 						S3C2410_MISCCR_USBSUSPND1, 0x0);
+ 
++	/*
++	 * HaRET hands the machine over from Windows Mobile with the sync cable
++	 * potentially already attached.  Force the external D+ pull-up low
++	 * before the Linux UDC is registered so the host never enumerates stale
++	 * Windows state.  The UDC later claims GPJ5 through the descriptor lookup.
++	 */
++	if (!WARN_ON(gpio_request(S3C2410_GPJ(5), "USB pull-up quiesce"))) {
++		WARN_ON(gpio_direction_output(S3C2410_GPJ(5), 0));
++		gpio_free(S3C2410_GPJ(5));
++	}
++
+ 	/* mmc power is disabled by default */
+diff --git a/drivers/usb/gadget/udc/s3c2410_udc.c b/drivers/usb/gadget/udc/s3c2410_udc.c
+--- a/drivers/usb/gadget/udc/s3c2410_udc.c
++++ b/drivers/usb/gadget/udc/s3c2410_udc.c
+@@ -1200,5 +1200,7 @@
+ static int s3c2410_udc_set_pullup(struct s3c2410_udc *udc, int is_on)
+ {
+ 	dprintk(DEBUG_NORMAL, "%s()\n", __func__);
++	dev_notice(&udc->gadget.dev, "RX1950 USB: pull-up %s\n",
++		   is_on ? "connect" : "disconnect");
+ 
+ 	if (udc_info && (udc_info->udc_command || udc->pullup_gpiod)) {
+@@ -1400,12 +1402,15 @@
+ 	struct s3c2410_udc *udc = to_s3c2410(g);
+ 
+ 	dprintk(DEBUG_NORMAL, "%s() '%s'\n", __func__, driver->driver.name);
++	dev_notice(&g->dev, "RX1950 USB: binding gadget driver '%s'\n",
++		   driver->driver.name);
+ 
+ 	/* Hook the driver */
+ 	udc->driver = driver;
+ 
+ 	/* Enable udc */
+ 	s3c2410_udc_enable(udc);
++	dev_notice(&g->dev, "RX1950 USB: gadget enabled, pull-up asserted\n");
+ 
+ 	return 0;
+ }
+@@ -1450,7 +1455,8 @@
+ 			.name		= "ep1-bulk",
+ 			.ops		= &s3c2410_ep_ops,
+ 			.maxpacket	= EP_FIFO_SIZE,
+-			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
++			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK |
++						USB_EP_CAPS_TYPE_INT,
+ 						USB_EP_CAPS_DIR_ALL),
+ 		},
+ 		.dev		= &memory,
+@@ -1464,7 +1470,8 @@
+ 			.name		= "ep2-bulk",
+ 			.ops		= &s3c2410_ep_ops,
+ 			.maxpacket	= EP_FIFO_SIZE,
+-			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
++			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK |
++						USB_EP_CAPS_TYPE_INT,
+ 						USB_EP_CAPS_DIR_ALL),
+ 		},
+ 		.dev		= &memory,
+@@ -1478,7 +1485,8 @@
+ 			.name		= "ep3-bulk",
+ 			.ops		= &s3c2410_ep_ops,
+ 			.maxpacket	= EP_FIFO_SIZE,
+-			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
++			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK |
++						USB_EP_CAPS_TYPE_INT,
+ 						USB_EP_CAPS_DIR_ALL),
+ 		},
+ 		.dev		= &memory,
+@@ -1492,7 +1500,8 @@
+ 			.name		= "ep4-bulk",
+ 			.ops		= &s3c2410_ep_ops,
+ 			.maxpacket	= EP_FIFO_SIZE,
+-			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK,
++			.caps		= USB_EP_CAPS(USB_EP_CAPS_TYPE_BULK |
++						USB_EP_CAPS_TYPE_INT,
+ 						USB_EP_CAPS_DIR_ALL),
+ 		},
+ 		.dev		= &memory,
+@@ -1518,3 +1527,4 @@
+ 	dev_dbg(dev, "%s()\n", __func__);
++	dev_notice(dev, "RX1950 USB: UDC probe device=%s\n", dev_name(dev));
+ 
+ 	usb_bus_clock = clk_get(NULL, "usb-bus-gadget");
+@@ -1535,5 +1545,7 @@
+ 	mdelay(10);
+ 
+ 	dev_dbg(dev, "got and enabled clocks\n");
++	dev_notice(dev, "RX1950 USB: clocks ready bus=%luHz device=%luHz\n",
++		   clk_get_rate(usb_bus_clock), clk_get_rate(udc_clock));
+ 
+ 	if (strncmp(pdev->name, "s3c2440", 7) == 0) {
+@@ -1592,6 +1604,9 @@
+ 		dev_dbg(dev, "got irq %i\n", irq);
++		dev_notice(dev, "RX1950 USB: VBUS GPIO acquired state=%d irq=%d\n",
++			   gpiod_get_value(udc->vbus_gpiod), irq);
+ 	} else {
+ 		udc->vbus = 1;
++		dev_notice(dev, "RX1950 USB: no VBUS GPIO; assuming cable present\n");
+ 	}
+ 
+ 	udc->pullup_gpiod = gpiod_get_optional(dev, "pullup", GPIOD_OUT_LOW);
+@@ -1604,7 +1619,10 @@
+ 	gpiod_set_consumer_name(udc->pullup_gpiod, "udc pullup");
++	dev_notice(dev, "RX1950 USB: pull-up GPIO %s and held disconnected\n",
++		   udc->pullup_gpiod ? "acquired" : "missing");
+ 
+ 	retval = usb_add_gadget_udc(&pdev->dev, &udc->gadget);
+ 	if (retval)
+ 		goto err_add_udc;
++	dev_notice(dev, "RX1950 USB: UDC registered; waiting for gadget function\n");
+ 
+ 	debugfs_create_file("registers", S_IRUGO, s3c2410_udc_debugfs_root, udc,
