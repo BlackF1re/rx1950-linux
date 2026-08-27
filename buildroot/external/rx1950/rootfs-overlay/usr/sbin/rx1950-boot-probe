@@ -77,11 +77,48 @@ snapshot_usb() {
     printf '%s\n' '=== network interfaces ==='
     ip -details link show 2>/dev/null || true
     ip address show 2>/dev/null || true
+    ip route show 2>/dev/null || true
+    printf '%s\n' '=== resolv.conf ==='
+    cat /etc/resolv.conf 2>/dev/null || true
+    printf '%s\n' '=== usb dhcp lease ==='
+    cat /var/run/rx1950-usb-dhcp.addr 2>/dev/null || printf '%s\n' 'none'
 
     printf '%s\n' '=== usb platform devices ==='
     for device in /sys/bus/platform/devices/*usb*; do
         [ -e "$device" ] || continue
         printf '%s\n' "$(basename "$device")"
+    done
+}
+
+snapshot_peripherals() {
+    printf '%s\n' '=== input devices ==='
+    cat /proc/bus/input/devices 2>/dev/null || true
+    ls -la /dev/input 2>/dev/null || true
+
+    printf '%s\n' '=== power supplies ==='
+    found=0
+    for supply in /sys/class/power_supply/*; do
+        [ -d "$supply" ] || continue
+        found=1
+        printf '%s\n' "--- $(basename "$supply")"
+        cat "$supply/uevent" 2>/dev/null || true
+    done
+    [ "$found" -eq 1 ] || printf '%s\n' 'none'
+
+    printf '%s\n' '=== rtc ==='
+    ls -la /dev/rtc* 2>/dev/null || true
+    cat /proc/driver/rtc 2>/dev/null || true
+
+    printf '%s\n' '=== alsa ==='
+    cat /proc/asound/cards 2>/dev/null || true
+    cat /proc/asound/devices 2>/dev/null || true
+
+    printf '%s\n' '=== storage ==='
+    df -h 2>/dev/null || true
+    for block in /sys/class/block/mmcblk0 /sys/class/block/mmcblk0p1 /sys/class/block/mmcblk0p2; do
+        [ -d "$block" ] || continue
+        printf '%s size=' "$(basename "$block")"
+        cat "$block/size" 2>/dev/null || true
     done
 }
 
@@ -97,6 +134,7 @@ snapshot_kernel() {
         cat /proc/uptime 2>/dev/null || true
         snapshot_backlight
         snapshot_usb
+        snapshot_peripherals
         printf '%s\n' '=== interrupts ==='
         cat /proc/interrupts 2>/dev/null || true
         printf '%s\n' '=== iomem ==='
