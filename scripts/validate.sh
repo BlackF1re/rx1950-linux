@@ -74,6 +74,7 @@ case "${1:-source}" in
     test -s "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     test -s "${ROOT_DIR}/kernel/rx1950_defconfig"
     test -s "${ROOT_DIR}/kernel/patches/0002-s3c244x-restore-fclk-n-and-trace-uart.patch"
+    test -s "${ROOT_DIR}/kernel/patches/0003-s3c24xx-defer-uart-activation.patch"
     test ! -e "${ROOT_DIR}/kernel/patches/0001-rx1950-add-early-led-boot-markers.patch"
     test ! -e "${ROOT_DIR}/kernel/patches/0002-rx1950-mark-zimage-entry-with-green-led.patch"
     validate_patch_syntax "${ROOT_DIR}"/kernel/patches/*.patch
@@ -83,10 +84,16 @@ case "${1:-source}" in
     grep -qx 'CONFIG_DMADEVICES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_S3C24XX_DMAC=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_MMC_S3C=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_LOG_BUF_SHIFT=17' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_DEBUG_KERNEL=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_DEBUG_DRIVER=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -Fqx 'CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -Fq 'clk_uart_baud3' "${ROOT_DIR}/kernel/patches/0002-s3c244x-restore-fclk-n-and-trace-uart.patch"
     grep -Fq 'platform_get_irq_optional(platdev, 1)' "${ROOT_DIR}/kernel/patches/0002-s3c244x-restore-fclk-n-and-trace-uart.patch"
+    grep -Fq 'deferring RX/TX controller activation until IRQ startup' "${ROOT_DIR}/kernel/patches/0003-s3c24xx-defer-uart-activation.patch"
+    grep -Fq 'both IRQ handlers installed; activating RX/TX modes' "${ROOT_DIR}/kernel/patches/0003-s3c24xx-defer-uart-activation.patch"
+    grep -Fq 'reset: writing UCON=' "${ROOT_DIR}/kernel/patches/0003-s3c24xx-defer-uart-activation.patch"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set RAMADDR 0x30000000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set RAMSIZE 32\*1024\*1024' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
@@ -97,6 +104,8 @@ case "${1:-source}" in
     grep -Fqx 'set CMDLINE "root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S10boot-probe"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
+    grep -Fq 'dmesg.log' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
+    grep -Fq '/proc/interrupts' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
     git -C "${ROOT_DIR}" diff --check
     ;;
   image)

@@ -1,0 +1,123 @@
+diff --git a/drivers/tty/serial/samsung_tty.c b/drivers/tty/serial/samsung_tty.c
+--- a/drivers/tty/serial/samsung_tty.c
++++ b/drivers/tty/serial/samsung_tty.c
+@@ -1241,8 +1241,15 @@ static int s3c24xx_serial_startup(struct uart_port *port)
+ 	struct s3c24xx_uart_port *ourport = to_ourport(port);
+ 	int ret;
+ 
++	dev_notice(port->dev,
++		   "RX1950 UART%d startup: begin rx_irq=%d tx_irq=%d UCON=0x%08x UFCON=0x%08x\n",
++		   port->line, ourport->rx_irq, ourport->tx_irq,
++		   rd_regl(port, S3C2410_UCON), rd_regl(port, S3C2410_UFCON));
++
+ 	ourport->rx_enabled = 1;
+ 
++	dev_notice(port->dev, "RX1950 UART%d startup: requesting RX IRQ %d\n",
++		   port->line, ourport->rx_irq);
+ 	ret = request_irq(ourport->rx_irq, s3c24xx_serial_rx_irq, 0,
+ 			  s3c24xx_serial_portname(port), ourport);
+ 
+@@ -1252,11 +1259,13 @@ static int s3c24xx_serial_startup(struct uart_port *port)
+ 	}
+ 
+ 	ourport->rx_claimed = 1;
+-
+-	dev_dbg(port->dev, "requesting tx irq...\n");
++	dev_notice(port->dev, "RX1950 UART%d startup: RX IRQ installed\n",
++		   port->line);
+ 
+ 	ourport->tx_enabled = 1;
+ 
++	dev_notice(port->dev, "RX1950 UART%d startup: requesting TX IRQ %d\n",
++		   port->line, ourport->tx_irq);
+ 	ret = request_irq(ourport->tx_irq, s3c24xx_serial_tx_irq, 0,
+ 			  s3c24xx_serial_portname(port), ourport);
+ 
+@@ -1266,10 +1275,17 @@ static int s3c24xx_serial_startup(struct uart_port *port)
+ 	}
+ 
+ 	ourport->tx_claimed = 1;
++	dev_notice(port->dev,
++		   "RX1950 UART%d startup: both IRQ handlers installed; activating RX/TX modes\n",
++		   port->line);
+ 
+-	/* the port reset code should have done the correct
+-	 * register setup for the port controls
++	/*
++	 * Legacy S3C24xx UCON RX/TX mode bits can assert UART subinterrupts
++	 * immediately. Do not program cfg->ucon until both handlers exist.
+ 	 */
++	s3c24xx_serial_resetport(port, ourport->cfg);
++	dev_notice(port->dev, "RX1950 UART%d startup: controller active\n",
++		   port->line);
+ 
+ 	return ret;
+ 
+@@ -1843,16 +1859,38 @@ static void s3c24xx_serial_resetport(struct uart_port *port,
+ {
+ 	const struct s3c24xx_uart_info *info = s3c24xx_port_to_info(port);
+ 	unsigned long ucon = rd_regl(port, S3C2410_UCON);
++	unsigned long target_ucon;
+ 
+ 	ucon &= (info->clksel_mask | info->ucon_mask);
+-	wr_regl(port, S3C2410_UCON, ucon | cfg->ucon);
++	target_ucon = ucon | cfg->ucon;
++
++	dev_notice(port->dev,
++		   "RX1950 UART%d reset: before UCON=0x%08lx ULCON=0x%08x UFCON=0x%08x UTRSTAT=0x%08x UFSTAT=0x%08x UBRDIV=0x%08x\n",
++		   port->line, rd_regl(port, S3C2410_UCON),
++		   rd_regl(port, S3C2410_ULCON), rd_regl(port, S3C2410_UFCON),
++		   rd_regl(port, S3C2410_UTRSTAT), rd_regl(port, S3C2410_UFSTAT),
++		   rd_regl(port, S3C2410_UBRDIV));
++	dev_notice(port->dev, "RX1950 UART%d reset: writing UCON=0x%08lx\n",
++		   port->line, target_ucon);
++	wr_regl(port, S3C2410_UCON, target_ucon);
++	dev_notice(port->dev, "RX1950 UART%d reset: UCON write complete readback=0x%08x\n",
++		   port->line, rd_regl(port, S3C2410_UCON));
+ 
+ 	/* reset both fifos */
++	dev_notice(port->dev, "RX1950 UART%d reset: asserting FIFO reset UFCON=0x%08lx\n",
++		   port->line, cfg->ufcon | S3C2410_UFCON_RESETBOTH);
+ 	wr_regl(port, S3C2410_UFCON, cfg->ufcon | S3C2410_UFCON_RESETBOTH);
++	dev_notice(port->dev, "RX1950 UART%d reset: FIFO reset asserted readback=0x%08x\n",
++		   port->line, rd_regl(port, S3C2410_UFCON));
+ 	wr_regl(port, S3C2410_UFCON, cfg->ufcon);
++	dev_notice(port->dev, "RX1950 UART%d reset: FIFO normal mode readback=0x%08x\n",
++		   port->line, rd_regl(port, S3C2410_UFCON));
+ 
+ 	/* some delay is required after fifo reset */
+ 	udelay(1);
++	dev_notice(port->dev, "RX1950 UART%d reset: complete UCON=0x%08x UFCON=0x%08x\n",
++		   port->line, rd_regl(port, S3C2410_UCON),
++		   rd_regl(port, S3C2410_UFCON));
+ }
+ 
+ #ifdef CONFIG_ARM_S3C24XX_CPUFREQ
+@@ -2081,8 +2119,21 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
+-	/* reset the fifos (and setup the uart) */
+-	dev_notice(port->dev, "RX1950 UART%d: resetting controller\n",
+-		   port->line);
+-	s3c24xx_serial_resetport(port, cfg);
+-	dev_notice(port->dev, "RX1950 UART%d: controller reset complete ucon=0x%08x\n",
+-		   port->line, rd_regl(port, S3C2410_UCON));
++	/*
++	 * S3C24xx UCON RX/TX mode bits can raise subinterrupts as soon as they
++	 * are programmed. Modern probe runs with local IRQs enabled, while the
++	 * RX/TX handlers are only installed later from ->startup(). Defer the
++	 * legacy controller reset until that point.
++	 */
++	if (ourport->info->type == TYPE_S3C24XX) {
++		dev_notice(port->dev,
++			   "RX1950 UART%d: deferring RX/TX controller activation until IRQ startup\n",
++			   port->line);
++		dev_notice(port->dev,
++			   "RX1950 UART%d: pre-start state ULCON=0x%08x UCON=0x%08x UFCON=0x%08x UTRSTAT=0x%08x UFSTAT=0x%08x UBRDIV=0x%08x\n",
++			   port->line, rd_regl(port, S3C2410_ULCON),
++			   rd_regl(port, S3C2410_UCON), rd_regl(port, S3C2410_UFCON),
++			   rd_regl(port, S3C2410_UTRSTAT), rd_regl(port, S3C2410_UFSTAT),
++			   rd_regl(port, S3C2410_UBRDIV));
++	} else {
++		s3c24xx_serial_resetport(port, cfg);
++	}
+ 
+ 	return 0;
