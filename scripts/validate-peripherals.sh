@@ -145,7 +145,7 @@ image)
     for path in \
         /usr/bin/htop /usr/bin/evtest /usr/sbin/i2cdetect /usr/bin/sensors \
         /usr/bin/strace /usr/sbin/iw /usr/bin/curl /usr/bin/kmod /usr/sbin/wpa_supplicant \
-        /usr/bin/wpa_passphrase /usr/sbin/rx1950-sensors /usr/sbin/rx1950-wlan \
+        /usr/sbin/wpa_passphrase /usr/sbin/rx1950-sensors /usr/sbin/rx1950-wlan \
         /usr/sbin/rx1950-wlan-firmware /usr/sbin/rx1950-blue /etc/opkg/opkg.conf \
         /sbin/udhcpc /usr/share/udhcpc/rx1950-usb.script /etc/init.d/S05grow-root \
         /etc/init.d/S10kernel-modules /etc/init.d/S35usb-gadget /etc/init.d/S40wlan; do
