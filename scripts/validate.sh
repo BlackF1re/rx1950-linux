@@ -94,6 +94,16 @@ validate_abi_configs() {
 validate_console_backlight_configs() {
     local kernel_config="$1" buildroot_config="$2"
 
+    grep -qx 'CONFIG_TTY=y' "${kernel_config}" ||
+        die "kernel dropped the TTY core required by the local console"
+    grep -qx 'CONFIG_VT=y' "${kernel_config}" ||
+        die "kernel dropped virtual terminal support required for tty1"
+    grep -qx 'CONFIG_VT_CONSOLE=y' "${kernel_config}" ||
+        die "kernel dropped the virtual terminal console"
+    grep -qx 'CONFIG_DEVTMPFS=y' "${kernel_config}" ||
+        die "kernel dropped devtmpfs; dynamic device nodes such as /dev/tty1 cannot exist"
+    grep -qx 'CONFIG_DEVTMPFS_MOUNT=y' "${kernel_config}" ||
+        die "kernel will not auto-mount devtmpfs on /dev"
     grep -qx 'CONFIG_BACKLIGHT_CLASS_DEVICE=y' "${kernel_config}" ||
         die "kernel dropped the backlight class; pwm-backlight cannot probe"
     grep -qx 'CONFIG_BACKLIGHT_PWM=y' "${kernel_config}" ||
@@ -107,6 +117,8 @@ validate_console_backlight_configs() {
         die "rootfs lost the local getty"
     grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${buildroot_config}" ||
         die "rootfs getty is not attached to framebuffer VT tty1"
+    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_DEVTMPFS=y' "${buildroot_config}" ||
+        die "rootfs device policy no longer expects kernel devtmpfs"
     ! grep -q 'BR2_TARGET_GENERIC_GETTY_PORT="ttySAC0"' "${buildroot_config}" ||
         die "rootfs still respawns getty on unavailable ttySAC0"
 }
@@ -127,6 +139,7 @@ case "${1:-source}" in
     grep -qx 'BR2_TOOLCHAIN_BUILDROOT_MUSL=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_TARGET_GENERIC_GETTY=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_DEVTMPFS=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     ! grep -q 'ttySAC0' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'CONFIG_ARCH_MULTI_V4T=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_ARCH_MULTI_V7 is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
@@ -134,6 +147,11 @@ case "${1:-source}" in
     grep -qx 'CONFIG_AEABI=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_OABI_COMPAT is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_KUSER_HELPERS=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_TTY=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_VT=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_VT_CONSOLE=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_DEVTMPFS=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_DEVTMPFS_MOUNT=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_DMADEVICES=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_S3C24XX_DMAC=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_MMC_S3C=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
