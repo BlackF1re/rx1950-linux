@@ -2,7 +2,7 @@
 # Control the optional RX1950 ACX100 WLAN modules.
 #
 # The default mode follows the historical RX1950 wiring, including GPA11,
-# which is shared with the visible Blue LED.  no-gpa11-power is a diagnostic
+# which is shared with the visible Blue LED. no-gpa11-power is a diagnostic
 # mode for testing whether this particular device can run the radio without
 # that shared line.
 
@@ -12,6 +12,7 @@ export PATH
 
 PIDFILE=/var/run/wpa_supplicant-rx1950.pid
 CONF=/etc/wpa_supplicant.conf
+BLUE_TRIGGER=/sys/class/leds/Blue/trigger
 
 iface() {
 	for n in /sys/class/net/wlan*; do
@@ -33,6 +34,28 @@ firmware_ready() {
 loaded_gpa11_mode() {
 	[ -r /sys/module/rx1950_acx/parameters/gpa11_power ] || return 1
 	cat /sys/module/rx1950_acx/parameters/gpa11_power
+}
+
+prepare_shared_power_trigger() {
+	[ -w "$BLUE_TRIGGER" ] || {
+		printf '%s\n' 'Blue LED trigger control is unavailable; refusing historical GPA11 power mode.' >&2
+		return 1
+	}
+	# The kernel only attaches a newly registered default trigger when the LED
+	# has no active trigger. Detach any userspace-selected trigger before the
+	# rx1950_acx module registers rx1950-acx-mem.
+	printf '%s\n' none > "$BLUE_TRIGGER" || return 1
+}
+
+verify_shared_power_trigger() {
+	[ -r "$BLUE_TRIGGER" ] || return 1
+	case "$(cat "$BLUE_TRIGGER" 2>/dev/null)" in
+		*'[rx1950-acx-mem]'*) return 0 ;;
+		*)
+			printf '%s\n' 'rx1950-acx-mem did not attach to the shared Blue/GPA11 line.' >&2
+			return 1
+			;;
+	esac
 }
 
 start_radio() {
@@ -63,11 +86,26 @@ start_radio() {
 		case "$requested" in
 			Y)
 				# Historical RX1950 sequence: GPA11 is the WLAN power/Blue line.
-				modprobe rx1950_acx || return 1
+				prepare_shared_power_trigger || {
+					modprobe -r acx-mac80211 2>/dev/null || true
+					return 1
+				}
+				modprobe rx1950_acx || {
+					modprobe -r acx-mac80211 2>/dev/null || true
+					return 1
+				}
+				if ! verify_shared_power_trigger; then
+					modprobe -r rx1950_acx 2>/dev/null || true
+					modprobe -r acx-mac80211 2>/dev/null || true
+					return 1
+				fi
 				;;
 			N)
 				printf '%s\n' 'DIAGNOSTIC: WLAN is starting without the historical GPA11 power/Blue line.' >&2
-				modprobe rx1950_acx gpa11_power=0 || return 1
+				modprobe rx1950_acx gpa11_power=0 || {
+					modprobe -r acx-mac80211 2>/dev/null || true
+					return 1
+				}
 				;;
 		esac
 	fi
