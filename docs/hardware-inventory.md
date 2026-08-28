@@ -19,6 +19,9 @@ Classification rules:
 - **Possible / unresolved** — the SoC contains the block or the board strongly
   implies a component, but its exact routing, part number or availability on
   the rx1950 PCB is not yet established.
+- **Known absent** — the standard rx1950 does not contain the feature. External
+  SDIO, USB or dock accessories are separate peripherals and do not change the
+  onboard-hardware classification.
 
 The separate [hardware support matrix](hardware.md) remains the release-facing
 acceptance record. This file is the lower-level engineering inventory from
@@ -172,6 +175,43 @@ Samsung provides the block but HP routing is unknown.
 | Additional power-good / reset supervisor circuitry | Portable devices normally contain reset/power supervision beyond the SoC | Inspect power/reset area and map any GPIO/EINT connections. |
 | Level shifters / analogue switches | Likely around connector, audio and IR domains | Identify parts and determine whether any require kernel-controlled enable lines. |
 | ESD / connector protection devices | Expected around external interfaces | Document in a physical BOM; normally no Linux representation is required. |
+
+## 4. Known absent from the standard rx1950
+
+This is intentionally the least operationally useful table, but it prevents
+future work from accidentally treating a feature from another iPAQ model or an
+external accessory as onboard RX1950 hardware.
+
+| Feature | Status / note |
+| --- | --- |
+| Integrated Bluetooth controller | Absent from the standard rx1950. |
+| Integrated GPS / GNSS receiver | Absent. GPS navigator bundles used external accessories, not an onboard receiver. |
+| GSM / EDGE / UMTS / LTE modem | Absent. |
+| SIM interface | Absent. |
+| Integrated camera | Absent. The SoC camera-interface block does not imply a camera on the board. |
+| Cellular antenna / RF chain | Absent. |
+| Capacitive touchscreen | Absent; the rx1950 uses a resistive touchscreen. |
+| Multitouch controller | Absent. |
+| 3D GPU / graphics accelerator | Absent. Display output is handled by the S3C framebuffer controller. |
+| ARM VFP / hardware floating-point unit | Absent on ARM920T; the distribution uses the soft-float ABI. |
+| 5 GHz WLAN | Absent; onboard WLAN is 2.4 GHz 802.11b. |
+| 802.11n WLAN | Absent. |
+| 802.11ac WLAN | Absent. |
+| 802.11ax WLAN | Absent. |
+| NFC controller / antenna | Absent. |
+| Gyroscope | Absent from the standard documented platform. |
+| Magnetometer | Absent from the standard documented platform. |
+| Barometer | Absent from the standard documented platform. |
+| Proximity sensor | Absent from the standard documented platform. |
+| Hardware QWERTY keyboard | Absent. Text entry requires the touchscreen/onscreen keyboard or an external accessory. |
+| Integrated Ethernet PHY / RJ45 | Absent. Networking is via WLAN, USB gadget, or external accessories. |
+| SATA controller / connector | Absent. |
+| PCI / PCIe expansion bus | Absent from the usable RX1950 platform. |
+
+Accelerometer and ambient-light/temperature sensing are deliberately **not**
+placed in this table yet: they have not been identified in the standard board
+documentation, but the unresolved ADC and board-level analogue inventory is not
+complete enough to turn lack of evidence into a definitive hardware absence.
 
 ## Maintenance workflow
 
