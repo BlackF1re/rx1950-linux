@@ -1,24 +1,45 @@
 #!/bin/sh
-# Keep the RX1950 Blue LED independent from WLAN policy.  It can be driven
-# manually or explicitly attached to wlan traffic using the kernel netdev LED
-# trigger.
+# Control the RX1950 Blue LED without accidentally changing the historical
+# GPA11 WLAN power line. When rx1950_acx is loaded with gpa11_power=1, Blue
+# and WLAN power are electrically shared and LED policy must remain under the
+# rx1950-acx-mem trigger.
 
 set -u
 LED=/sys/class/leds/Blue
+POWER_PARAM=/sys/module/rx1950_acx/parameters/gpa11_power
 
 need_led() {
 	[ -d "$LED" ] || { printf '%s\n' 'Blue LED is unavailable' >&2; exit 1; }
 }
 
+shared_power_active() {
+	[ -r "$POWER_PARAM" ] || return 1
+	case "$(cat "$POWER_PARAM" 2>/dev/null)" in
+		Y|y|1) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+need_independent_blue() {
+	if shared_power_active; then
+		printf '%s\n' 'Blue is currently the historical GPA11 WLAN power line.' >&2
+		printf '%s\n' 'Changing its trigger/brightness could power-cycle the radio.' >&2
+		printf '%s\n' 'Stop WLAN first, or test: rx1950-wlan restart no-gpa11-power' >&2
+		exit 1
+	fi
+}
+
 manual() {
 	value=${1:-0}
 	case "$value" in 0|1) ;; *) printf '%s\n' 'brightness must be 0 or 1' >&2; exit 2 ;; esac
+	need_independent_blue
 	echo none > "$LED/trigger"
 	echo "$value" > "$LED/brightness"
 }
 
 wlan() {
 	dev=${1:-wlan0}
+	need_independent_blue
 	[ -e "/sys/class/net/$dev" ] || { printf '%s\n' "network device $dev does not exist" >&2; exit 1; }
 	echo netdev > "$LED/trigger"
 	[ ! -w "$LED/device_name" ] || echo "$dev" > "$LED/device_name"
@@ -28,6 +49,11 @@ wlan() {
 }
 
 status() {
+	if shared_power_active; then
+		printf '%s\n' 'wiring=shared-gpa11-wlan-power'
+	else
+		printf '%s\n' 'wiring=independent-or-wlan-stopped'
+	fi
 	printf 'brightness='; cat "$LED/brightness"
 	printf 'trigger='; cat "$LED/trigger"
 	for f in device_name link rx tx; do
@@ -42,6 +68,7 @@ case "${1:-status}" in
 	wlan) wlan "${2:-wlan0}" ;;
 	trigger)
 		[ "$#" -eq 2 ] || { printf '%s\n' 'usage: rx1950-blue trigger NAME' >&2; exit 2; }
+		need_independent_blue
 		echo "$2" > "$LED/trigger"
 		;;
 	status) status ;;

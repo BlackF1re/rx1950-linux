@@ -15,6 +15,13 @@ WLAN / TI TNETW1100B (ACX100)
 The ACX driver and RX1950 bus glue are shipped as kernel-matched modules.
 Proprietary TI firmware is intentionally not redistributed in this image.
 
+The default RX1950 WLAN sequence follows the historical platform driver:
+GPH10 provides CLKOUT1, GPA15 is nGCS4, GPC8/GPC9 are asserted high, GPA14
+controls reset, GPG8 is EINT16, and GPA11 is the WLAN power line. Mainline
+Linux also exposes that same GPA11 line as the visible Blue LED with the
+rx1950-acx-mem default trigger, so Blue and WLAN power must be treated as
+shared until hardware testing proves otherwise.
+
 With internet access through USB networking, install the separately distributed
 firmware from OpenBSD:
 
@@ -39,37 +46,38 @@ Then verify:
     iw dev wlan0 link
     ping -c 4 1.1.1.1
 
-Blue LED
---------
-Blue is deliberately independent from WLAN by default:
+Blue LED / GPA11
+----------------
+In the default historical WLAN mode, GPA11 is used as the radio power line and
+is also the physical Blue LED. The kernel module drives it through the existing
+rx1950-acx-mem LED trigger instead of taking the GPIO away from leds-gpio.
+While that mode is active, rx1950-blue refuses manual or netdev-trigger changes
+because they could power-cycle the WLAN hardware.
+
+You can inspect the state safely with:
+
+    rx1950-blue status
+    rx1950-wlan status
+
+Hardware diagnostic: Blue independence
+--------------------------------------
+To determine whether the actual RX1950 hardware can operate without GPA11,
+stop the normal mode and deliberately test the radio without that line:
+
+    rx1950-wlan restart no-gpa11-power
+    rx1950-wlan status
+    rx1950-wlan scan
+
+If the interface still appears and scans reliably in no-gpa11-power mode, Blue
+can be controlled independently for that test:
 
     rx1950-blue manual 1
     rx1950-blue manual 0
-
-It can optionally be assigned to WLAN link/RX/TX activity without changing
-radio power:
-
     rx1950-blue wlan wlan0
 
-Return it to independent manual control with:
+Return to the historically documented wiring with:
 
-    rx1950-blue manual 0
+    rx1950-wlan restart historical
 
-Hardware diagnostic fallback
-----------------------------
-Historical RX1950 WLAN code also treated GPA11, the physical Blue LED GPIO, as
-a WLAN power signal. The normal build does NOT do this because it would make
-independent Blue control impossible. If the radio does not appear in normal
-mode, collect:
-
-    dmesg | grep -iE 'rx1950-acx|acx|firmware|wlan'
-    rx1950-wlan status
-
-Only as a diagnostic comparison, try:
-
-    rx1950-wlan stop
-    rx1950-wlan start gpa11-power
-
-That fallback intentionally couples WLAN power and Blue and is not the target
-configuration. Do not enable it permanently unless hardware testing proves
-GPA11 is electrically required.
+The no-gpa11-power mode is diagnostic until real-device testing establishes
+that GPA11 is not required for radio power on this hardware revision.
