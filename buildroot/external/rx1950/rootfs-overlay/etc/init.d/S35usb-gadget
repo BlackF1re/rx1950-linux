@@ -19,10 +19,12 @@ start_dhcp() {
     fi
     rm -f "$DHCP_PID"
 
-    # Keep boot non-blocking. udhcpc backgrounds itself if the laptop is not
-    # sharing a connection yet and continues listening for a later lease.
-    udhcpc -i usb0 -p "$DHCP_PID" -s "$DHCP_SCRIPT" \
-        -b -t 3 -T 2 -A 5 >/dev/kmsg 2>&1 &
+    # Keep one foreground udhcpc instance alive in the background of init.
+    # Without -n it retries indefinitely, so Windows ICS can be enabled before
+    # or after Linux has booted.  The lease script preserves 192.168.7.2 while
+    # adding the host-provided address, route and DNS information.
+    udhcpc -f -i usb0 -p "$DHCP_PID" -s "$DHCP_SCRIPT" \
+        -t 3 -T 2 -A 5 >/dev/kmsg 2>&1 &
 }
 
 case "$1" in
