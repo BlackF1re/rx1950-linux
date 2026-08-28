@@ -38,15 +38,27 @@ network management, time, SSH and the optional graphical session. Diagnostic,
 debug and graphical packages are opt-in. Persistent user data and the package
 database reside on the SD root/data filesystem.
 
-The base image includes `opkg`, and the engineering image ships a valid local
-destination/list configuration so its state is deterministic. It deliberately
-contains no remote `src` entry: Buildroot does not produce a compatible binary
-package repository, and mixing an unrelated OpenWrt or Entware feed with this
-ARMv4T/musl userspace would violate the ABI contract. A project-hosted signed
-package feed, package keys, feed URLs and trust policy are a release gate; they
-will be versioned alongside the release manifest before packages are
-published. Packages are built for ARMv4T, declare their installed size and
-dependencies, and must not assume a desktop-class memory budget.
+The base image includes `opkg` and a project-owned feed definition. Feed
+packages are rebuilt with the exact same Buildroot 2025.02.2 toolchain and
+ARM920T/ARMv4T, EABI soft-float, musl ABI as the image. The package architecture
+is versioned as `rx1950_armv4t_musl_v1`; unrelated OpenWrt, Entware or Debian
+repositories are explicitly incompatible and must not be mixed with it.
+
+The feed builder snapshots the sealed base package/file set, enables only the
+optional package fragment, and emits packages only for final target files that
+survive Buildroot `target-finalize`. It refuses to overwrite any base-image
+file or let two feed packages own the same path. Configuration files under
+`/etc` are emitted as opkg `conffiles`, and package-time maintainer scripts
+reproduce the relevant Buildroot finalization semantics. CI opens every `.ipk`,
+checks its archive structure, dependency closure, SHA-256 digest and ARM EABI
+soft-float ELF headers before the feed can become a release asset.
+
+Engineering-feed transport is authenticated by HTTPS and package payloads are
+bound to SHA-256 digests in the index/release manifest. GPG repository signing
+is not enabled in the engineering image yet: Buildroot's opkg 0.7.0 signature
+path pulls in GPGME and its supporting stack, whose footprint must be measured
+on this 32 MiB target. A cryptographically signed repository remains a gate for
+the first release that is claimed as generally usable.
 
 Hardware monitoring uses the in-tree S3C ADC hwmon driver. Battery-voltage ADC
 channel 0 is exported with the same board calibration used by the battery
@@ -58,7 +70,7 @@ hardware.
 ## Kernel policy
 
 The upstream legacy machine description is available through Linux 6.2. The
-kernel subtree will pin a reviewed compatibility release, its exact source
+kernel subtree pins a reviewed compatibility release, its exact source
 revision, cross compiler and board configuration. Board changes are stored as
 small, numbered patches with rationale and an on-device test reference. Any
 forward-port beyond that baseline is an explicit engineering effort, not a
@@ -85,10 +97,24 @@ activation design is validated on hardware. Consequently UDA1380 PCM remains
 blocked at the DMA acquisition stage for now; preserving bootable storage takes
 priority over enabling audio through an unverified early platform change.
 
+Experimental WLAN is deliberately outside the boot-critical board-device
+array. The pinned ACX100 memory-transport driver and RX1950 GPIO/MMIO glue are
+built as kernel-matched modules and carried on the FAT boot partition. An early
+userspace installer accepts only the two expected module paths under the
+currently running `uname -r`; an old, malformed or path-injecting bundle is
+ignored. The modules are not loaded until later userspace has found proprietary
+firmware, so WLAN failure cannot remove the SD root or prevent USB recovery.
+
 ## Artifact contract
 
-A release contains the compressed SD image, SHA-256 checksum, software bill of
-materials, build provenance, HaRET boot files, package-feed key and hardware
-acceptance report. Continuous integration builds each component independently,
-then assembles and inspects the final image. Publishing is gated on reproducible
-inputs and the complete hardware report described in [goals.md](goals.md).
+An engineering release contains the compressed SD image, SHA-256 checksum,
+build provenance, kernel/optional module payload, HaRET boot files and the
+native package-feed metadata/assets produced by the same CI run. Continuous
+integration builds the root filesystem and kernel independently, verifies their
+handoff digests, assembles the image and validates the sealed payload before a
+main-branch release is published.
+
+A release claimed as generally usable additionally requires the package-feed
+trust key/signature and the complete hardware acceptance report described in
+[goals.md](goals.md). CI success alone is never treated as evidence that an
+untested peripheral works on the physical handheld.
