@@ -5,6 +5,7 @@ set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly OPKG_CONF="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/opkg/opkg.conf"
+readonly DISTFEEDS_CONF="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/opkg/distfeeds.conf"
 readonly DEFCONFIG="${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
 readonly FRAGMENT="${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_packages.fragment"
 readonly FEED_URL="https://github.com/BlackF1re/rx1950-linux/releases/latest/download"
@@ -14,7 +15,14 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 require_line() { grep -Fqx "$1" "$2" || die "$3"; }
 
 validate_source() {
-    require_line "src/gz rx1950 ${FEED_URL}" "${OPKG_CONF}" "rx1950 opkg feed URL missing"
+    # Keep repository locations separate from the core opkg policy. Upstream
+    # opkg 0.7.0 reads every /etc/opkg/*.conf file, so distfeeds.conf is the
+    # conventional place for the source while opkg.conf owns destinations and
+    # architecture policy.
+    require_line "src/gz rx1950 ${FEED_URL}" "${DISTFEEDS_CONF}" "rx1950 opkg feed URL missing"
+    if grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "${OPKG_CONF}"; then
+        die "opkg.conf must not mix repository definitions with core policy"
+    fi
     require_line "arch all 1" "${OPKG_CONF}" "opkg all architecture missing"
     require_line "arch ${FEED_ARCH} 100" "${OPKG_CONF}" "rx1950 opkg ABI architecture missing"
     require_line "dest root /" "${OPKG_CONF}" "opkg root destination missing"
@@ -47,17 +55,31 @@ validate_source() {
     grep -Fq 'rx1950_armv4t_musl_v1' "${ROOT_DIR}/scripts/make-opkg-feed.py" || die "feed builder ABI token mismatch"
 }
 
+extract_rootfs_file() {
+    local rootfs="$1" path="$2" destination="$3"
+    debugfs -R "dump ${path} ${destination}" "${rootfs}" >/dev/null 2>&1 || \
+        die "sealed rootfs is missing ${path}"
+}
+
 validate_rootfs() {
-    local rootfs="$1" extracted
+    local rootfs="$1" opkg_extracted feeds_extracted
     command -v debugfs >/dev/null 2>&1 || die "debugfs is required"
     [[ -s "${rootfs}" ]] || die "rootfs image is missing: ${rootfs}"
-    extracted="$(mktemp)"
-    trap 'rm -f "${extracted}"' RETURN
-    debugfs -R 'dump /etc/opkg/opkg.conf '"${extracted}" "${rootfs}" >/dev/null 2>&1 || \
-        die "sealed rootfs is missing /etc/opkg/opkg.conf"
-    require_line "src/gz rx1950 ${FEED_URL}" "${extracted}" "sealed rootfs lost rx1950 package feed"
-    require_line "arch ${FEED_ARCH} 100" "${extracted}" "sealed rootfs lost package ABI architecture"
-    rm -f "${extracted}"
+    opkg_extracted="$(mktemp)"
+    feeds_extracted="$(mktemp)"
+    trap 'rm -f "${opkg_extracted}" "${feeds_extracted}"' RETURN
+
+    extract_rootfs_file "${rootfs}" /etc/opkg/opkg.conf "${opkg_extracted}"
+    extract_rootfs_file "${rootfs}" /etc/opkg/distfeeds.conf "${feeds_extracted}"
+
+    require_line "src/gz rx1950 ${FEED_URL}" "${feeds_extracted}" "sealed rootfs lost rx1950 package feed"
+    require_line "arch ${FEED_ARCH} 100" "${opkg_extracted}" "sealed rootfs lost package ABI architecture"
+    require_line "lists_dir ext /var/lib/opkg/lists" "${opkg_extracted}" "sealed rootfs lost persistent opkg lists directory"
+    if grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "${opkg_extracted}"; then
+        die "sealed opkg.conf unexpectedly contains a repository definition"
+    fi
+
+    rm -f "${opkg_extracted}" "${feeds_extracted}"
     trap - RETURN
 }
 
