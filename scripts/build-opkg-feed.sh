@@ -12,7 +12,6 @@ readonly BUILD_DIR="${ROOT_DIR}/.build"
 readonly BUILDROOT_VERSION="2025.02.2"
 readonly BUILDROOT_SHA256="4a74e9a6f82ef8660ae2ef865d0ad61a4e9ccd67e2aeef885cae1165581ed5ac"
 readonly EXTERNAL_DIR="${ROOT_DIR}/buildroot/external/rx1950"
-readonly BASE_DEFCONFIG="${EXTERNAL_DIR}/configs/rx1950_defconfig"
 readonly PACKAGE_FRAGMENT="${EXTERNAL_DIR}/configs/rx1950_packages.fragment"
 readonly BUILDROOT_OUTPUT="${BUILD_DIR}/buildroot-output"
 
@@ -47,14 +46,10 @@ make_br() {
 
 snapshot_base_files() {
     local destination="$1"
-    : > "${destination}"
-    while IFS= read -r -d '' listing; do
-        sed -n 's/^[^,]*,//p' "${listing}"
-    done < <(find "${BUILDROOT_OUTPUT}/build" -mindepth 2 -maxdepth 2 \
-        -type f -name '.files-list.txt' -print0 | sort -z) \
-        | sed -e 's#^\./##' -e 's#^/##' \
+    [[ -d "${BUILDROOT_OUTPUT}/target" ]] || die "base Buildroot target directory is missing"
+    find "${BUILDROOT_OUTPUT}/target" \( -type f -o -type l \) -printf '%P\n' \
         | LC_ALL=C sort -u > "${destination}"
-    [[ -s "${destination}" ]] || die "base Buildroot file ownership snapshot is empty"
+    [[ -s "${destination}" ]] || die "base rootfs file snapshot is empty"
 }
 
 apply_package_fragment() {
@@ -106,6 +101,9 @@ main() {
     validate_target_abi
 
     make_br "${source}" -s show-info > "${OUTPUT_DIR}/base-show-info.json"
+    # Snapshot every regular file/symlink in the sealed base target, including
+    # rootfs-overlay files. Feed packages are forbidden to overwrite any of
+    # them, not just files that Buildroot attributes to a package.
     snapshot_base_files "${OUTPUT_DIR}/base-files.txt"
 
     # Enable only the optional feed payload. Buildroot keeps all previously
