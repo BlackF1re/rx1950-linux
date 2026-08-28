@@ -26,7 +26,7 @@ in a release claim.
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| WLAN | Integrated IEEE 802.11b TI TNETW1100B on a memory-mapped bus; its legacy `acx-mem` driver and board glue are not in Linux 6.2 | Driver port required | Port the driver and GPIO power/reset/IRQ wiring, then scan, associate, DHCP, DNS, transfer and reconnect. |
+| WLAN | Integrated IEEE 802.11b TI TNETW1100B/ACX100 on the external memory bus; pinned ACX mac80211 slave-memory driver plus isolated RX1950 GPIO/MMIO glue are built as kernel-matched modules; proprietary firmware remains external | Planned | Import firmware, load modules without disturbing SD/root, verify `iw dev`, scan, WPA/WPA2 association, DHCP, DNS, sustained TCP transfer and reconnect; compare historical GPA11 power mode with `no-gpa11-power` and verify Blue LED behaviour. |
 | Bluetooth | No integrated controller | Not applicable | SDIO Bluetooth cards are separate optional peripherals. |
 | Infrared | IrDA SIR/CIR port | Planned | `irda` stack discovery and bidirectional transfer with a known peer. |
 | USB device | S3C2410 UDC via 22-pin connector; CDC-NCM Ethernet gadget is enabled in the engineering image for native Windows 11/Linux host support | Experimental | Windows 11 enumerates the inbox `UsbNcm.sys` network adapter without an external INF; `192.168.7.2` answers SSH after a cold boot; disconnect and reconnect work cleanly. |
@@ -53,7 +53,7 @@ in a release claim.
 | FAT boot partition | Experimental | Windows Mobile can read shipped boot files and persistent HaRET diagnostics. |
 | Linux root partition | Experimental | 0.1.13 boots and grows ext4 successfully; re-verify the post-0.1.14 rollback image on physical media. |
 | Console and SSH | Experimental | Local framebuffer console and SSH over USB CDC-NCM are verified on the booting engineering image; still verify reconnect and long-running stability. |
-| Package management | Planned | `opkg update`, signature check, install, remove and recovery from interrupted transaction once the project feed is published. |
+| Package management | Planned | CI builds and validates the native ARMv4T/musl feed; on hardware verify `opkg update`, install/remove/reinstall, dependency handling, `/etc` conffile preservation, available-space failure and interrupted-transaction recovery. Cryptographic repository signing remains a separate release gate. |
 | Graphical session | Experimental | The image includes the Matchbox session (TinyX, launcher, panel and on-screen keyboard); verify QVGA startup, stylus, physical navigation, idle RAM and clean exit on the device. |
 
 ## Regression record
@@ -81,12 +81,15 @@ infrared, USB/serial dock connector and audio interfaces. The historical
 upstream board file enumerates the platform devices, GPIO key map, UDA1380
 codec, MCI wiring, framebuffer/backlight, RTC, USB device controller, NAND,
 battery and LEDs. The kernel configuration selects the corresponding in-tree
-drivers as built-ins, so the image does not depend on an unshipped module tree.
-The engineering kernel exposes the S3C2442 ADC through hwmon while retaining
-the existing battery driver; raw ADC channels remain available for board
-investigation. The TI WLAN driver remains an explicit exception: it requires a
-maintained port before it can be claimed as available. The Linux Kernel Driver
-Database records the in-tree machine configuration through Linux 6.2.
+drivers as built-ins, so the image does not depend on an unshipped module tree
+for its boot-critical hardware. The engineering kernel exposes the S3C2442 ADC
+through hwmon while retaining the existing battery driver; raw ADC channels
+remain available for board investigation. The TI WLAN path is an explicit
+optional-module exception: a pinned ACX100 slave-memory port and RX1950 glue are
+now built and validated by CI, but remain **Planned** until the radio is detected
+and exercised on the physical handheld. Proprietary TI firmware is never
+bundled in the release image. The Linux Kernel Driver Database records the
+in-tree machine configuration through Linux 6.2.
 
 Primary references:
 
