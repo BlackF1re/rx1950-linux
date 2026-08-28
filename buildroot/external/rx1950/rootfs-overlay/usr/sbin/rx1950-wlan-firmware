@@ -1,6 +1,6 @@
 #!/bin/sh
 # Install ACX100 firmware without redistributing proprietary TI blobs in the
-# rx1950-linux image.  Firmware can be copied to the FAT boot partition by the
+# rx1950-linux image. Firmware can be copied to the FAT boot partition by the
 # user or fetched explicitly from OpenBSD's separately distributed firmware
 # package.
 
@@ -14,6 +14,16 @@ MNT=/mnt/rx1950-boot
 OPENBSD_URL=${RX1950_ACX_FIRMWARE_URL:-https://firmware.openbsd.org/firmware/7.7/acx-firmware-1.4p6.tgz}
 
 say() { printf '%s\n' "$*"; }
+
+find_boot_mount() {
+	[ -r /proc/mounts ] || return 1
+	while read -r device mountpoint _rest; do
+		[ "$device" = "$BOOT" ] || continue
+		printf '%s\n' "$mountpoint"
+		return 0
+	done < /proc/mounts
+	return 1
+}
 
 install_main() {
 	src=$1
@@ -81,13 +91,16 @@ import_dir() {
 }
 
 import_boot() {
-	mkdir -p "$MNT"
 	mounted_here=0
-	if ! grep -q " $MNT " /proc/mounts 2>/dev/null; then
+	boot_dir="$(find_boot_mount 2>/dev/null || true)"
+	if [ -z "$boot_dir" ]; then
+		mkdir -p "$MNT"
 		mount -t vfat -o ro "$BOOT" "$MNT" || return 1
+		boot_dir="$MNT"
 		mounted_here=1
 	fi
-	import_dir "$MNT"
+
+	import_dir "$boot_dir"
 	ret=$?
 	[ "$mounted_here" -eq 0 ] || umount "$MNT" 2>/dev/null || true
 	return "$ret"
