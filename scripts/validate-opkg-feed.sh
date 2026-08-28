@@ -62,6 +62,10 @@ validate_source() {
 
     grep -Fq 'base-show-info.json' "${ROOT_DIR}/scripts/build-opkg-feed.sh" || die "feed builder does not compare against the base package set"
     grep -Fq 'would overwrite base-image file' "${ROOT_DIR}/scripts/make-opkg-feed.py" || die "feed builder lacks base-file collision protection"
+    grep -Fq 'filter_final_target_owners' "${ROOT_DIR}/scripts/make-opkg-feed.py" || die "feed builder does not filter target-finalize removals"
+    grep -Fq 'os.path.lexists(target / path)' "${ROOT_DIR}/scripts/make-opkg-feed.py" || die "feed builder would lose dangling package symlinks"
+    grep -Fq 'SHELL_REGISTRATIONS' "${ROOT_DIR}/scripts/make-opkg-feed.py" || die "feed builder does not preserve Buildroot shell registration hooks"
+    grep -Fq 'conffiles' "${ROOT_DIR}/scripts/make-opkg-feed.py" || die "feed builder does not mark package configuration files"
     grep -Fq 'rx1950_armv4t_musl_v1' "${ROOT_DIR}/scripts/make-opkg-feed.py" || die "feed builder ABI token mismatch"
 }
 
@@ -93,8 +97,53 @@ validate_rootfs() {
     trap - RETURN
 }
 
+validate_ipk_payload() {
+    local package="$1" tmp name candidate header
+    tmp="$(mktemp -d)"
+    mkdir -p "${tmp}/control" "${tmp}/data"
+
+    ar p "${package}" control.tar.gz | tar -xzf - -C "${tmp}/control"
+    ar p "${package}" data.tar.gz | tar -xzf - -C "${tmp}/data"
+    name="$(sed -n 's/^Package: //p' "${tmp}/control/control" | head -n 1)"
+    [[ -n "${name}" ]] || { rm -rf "${tmp}"; die "$(basename "${package}") has no Package control field"; }
+
+    case "${name}" in
+        bash|tmux)
+            [[ -x "${tmp}/control/postinst" ]] || { rm -rf "${tmp}"; die "${name} lacks executable postinst"; }
+            [[ -x "${tmp}/control/prerm" ]] || { rm -rf "${tmp}"; die "${name} lacks executable prerm"; }
+            grep -Fq '/etc/shells' "${tmp}/control/postinst" || { rm -rf "${tmp}"; die "${name} postinst does not register /etc/shells"; }
+            grep -Fq 'opkg-shells' "${tmp}/control/prerm" || { rm -rf "${tmp}"; die "${name} prerm lacks ownership marker handling"; }
+            ;;
+        readline)
+            [[ -f "${tmp}/control/conffiles" ]] || { rm -rf "${tmp}"; die "readline lacks conffiles metadata"; }
+            require_line '/etc/inputrc' "${tmp}/control/conffiles" 'readline does not protect /etc/inputrc as configuration'
+            ;;
+    esac
+
+    # The host readelf understands foreign ELF headers without executing them.
+    # Every target ELF emitted by this feed must remain exactly ARM EABI5
+    # soft-float; a hard-float or newer-architecture package is unusable on the
+    # ARM920T and must never reach the repository.
+    while IFS= read -r -d '' candidate; do
+        header="${tmp}/elf-header"
+        if readelf -h "${candidate}" > "${header}" 2>/dev/null; then
+            grep -Eq 'Machine:[[:space:]]+ARM' "${header}" || {
+                rm -rf "${tmp}"; die "${name} contains a non-ARM ELF: ${candidate#${tmp}/data/}";
+            }
+            grep -Eq 'Flags:.*EABI.*soft-float ABI' "${header}" || {
+                rm -rf "${tmp}"; die "${name} contains an incompatible ARM ABI: ${candidate#${tmp}/data/}";
+            }
+        fi
+    done < <(find "${tmp}/data" -type f -print0)
+
+    rm -rf "${tmp}"
+}
+
 validate_feed() {
     local dir="$1" package count=0
+    command -v ar >/dev/null 2>&1 || die "ar is required"
+    command -v tar >/dev/null 2>&1 || die "tar is required"
+    command -v readelf >/dev/null 2>&1 || die "readelf is required"
     [[ -s "${dir}/Packages" ]] || die "Packages index missing"
     [[ -s "${dir}/Packages.gz" ]] || die "Packages.gz missing"
     [[ -s "${dir}/feed.json" ]] || die "feed.json missing"
@@ -112,6 +161,7 @@ validate_feed() {
         [[ " ${members[*]} " == *' debian-binary '* ]] || die "$(basename "${package}") lacks debian-binary"
         [[ " ${members[*]} " == *' control.tar.gz '* ]] || die "$(basename "${package}") lacks control.tar.gz"
         [[ " ${members[*]} " == *' data.tar.gz '* ]] || die "$(basename "${package}") lacks data.tar.gz"
+        validate_ipk_payload "${package}"
     done
     (( count > 0 )) || die "feed contains no ipk packages"
 
