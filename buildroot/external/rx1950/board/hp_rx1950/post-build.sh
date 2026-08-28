@@ -5,6 +5,61 @@ set -euo pipefail
 readonly TARGET_DIR="$1"
 readonly EXTERNAL_DIR="$2"
 readonly RELEASE_VERSION="${RX1950_RELEASE_VERSION:-devel}"
+readonly PROJECT_DIR="$(cd "${EXTERNAL_DIR}/../../.." && pwd)"
+readonly DOWNLOAD_DIR="${PROJECT_DIR}/dl"
+readonly ACX_ARCHIVE="${DOWNLOAD_DIR}/acx-firmware-1.4p6.tgz"
+readonly ACX_URL="http://firmware.openbsd.org/firmware/7.7/acx-firmware-1.4p6.tgz"
+readonly ACX_MAIN_SHA256="3d92318dadef22b1d1b062925ef66bac2ad48a0fd4fc83b88dcabba38c182b7b"
+readonly ACX_RADIO0D_SHA256="ee75c05bb8a17a7978abbbc0f38fb79b1915c1e2357889e65657a39024d5b3a3"
+readonly ACX_RADIO11_SHA256="e005a93a0b463e01edba2b79038b54c29a7932efee61c851a2ac644b8a4e5dd4"
+
+verify_sha256() {
+    local file="$1" expected="$2"
+    printf '%s  %s\n' "$expected" "$file" | sha256sum --check --status
+}
+
+install_acx_firmware() {
+    local tmp main radio0d radio11
+    mkdir -p "${DOWNLOAD_DIR}" "${TARGET_DIR}/lib/firmware"
+
+    # firmware.openbsd.org currently serves this historical package over HTTP
+    # more reliably than its broken legacy TLS vhost.  Transport trust is not
+    # used here: every installed binary is pinned to its known SHA-256 digest.
+    if [[ ! -s "${ACX_ARCHIVE}" ]]; then
+        curl --fail --location --retry 3 "${ACX_URL}" --output "${ACX_ARCHIVE}"
+    fi
+
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "${tmp}"' RETURN
+    tar -xzf "${ACX_ARCHIVE}" -C "${tmp}"
+
+    main="$(find "${tmp}" -type f -name tiacx100 -print -quit)"
+    radio0d="$(find "${tmp}" -type f -name tiacx100r0D -print -quit)"
+    radio11="$(find "${tmp}" -type f -name tiacx100r11 -print -quit)"
+    [[ -n "$main" && -n "$radio0d" && -n "$radio11" ]] || {
+        rm -f "${ACX_ARCHIVE}"
+        echo 'ACX100 firmware package is incomplete' >&2
+        return 1
+    }
+
+    if ! verify_sha256 "$main" "$ACX_MAIN_SHA256" ||
+       ! verify_sha256 "$radio0d" "$ACX_RADIO0D_SHA256" ||
+       ! verify_sha256 "$radio11" "$ACX_RADIO11_SHA256"; then
+        rm -f "${ACX_ARCHIVE}"
+        echo 'ACX100 firmware checksum mismatch' >&2
+        return 1
+    fi
+
+    install -m 0644 "$main" "${TARGET_DIR}/lib/firmware/WLANGEN.BIN"
+    install -m 0644 "$radio0d" "${TARGET_DIR}/lib/firmware/RADIO0d.BIN"
+    install -m 0644 "$radio11" "${TARGET_DIR}/lib/firmware/RADIO11.BIN"
+    touch -d "@${SOURCE_DATE_EPOCH:-1767225600}" \
+        "${TARGET_DIR}/lib/firmware/WLANGEN.BIN" \
+        "${TARGET_DIR}/lib/firmware/RADIO0d.BIN" \
+        "${TARGET_DIR}/lib/firmware/RADIO11.BIN"
+    rm -rf "$tmp"
+    trap - RETURN
+}
 
 install -d -m 0755 \
     "${TARGET_DIR}/proc" \
@@ -17,6 +72,7 @@ install -d -m 0755 \
     "${TARGET_DIR}/lib/firmware" \
     "${TARGET_DIR}/var/lib/opkg/lists"
 install -m 0644 "${EXTERNAL_DIR}/board/hp_rx1950/fstab" "${TARGET_DIR}/etc/fstab"
+install_acx_firmware
 
 # Buildroot normally derives /etc/os-release VERSION from the surrounding Git
 # checkout. A pull-request synthetic merge and the equivalent squash commit have
@@ -34,7 +90,12 @@ EOF
 
 chmod 0755 \
     "${TARGET_DIR}/etc/init.d/S10kernel-modules" \
+    "${TARGET_DIR}/etc/init.d/S35usb-gadget" \
+    "${TARGET_DIR}/etc/init.d/S38time-sync" \
     "${TARGET_DIR}/etc/init.d/S40wlan" \
+    "${TARGET_DIR}/usr/share/udhcpc/rx1950-usb.script" \
+    "${TARGET_DIR}/usr/sbin/rx1950-time-sync" \
+    "${TARGET_DIR}/usr/sbin/rx1950-timezone" \
     "${TARGET_DIR}/usr/sbin/rx1950-wlan" \
     "${TARGET_DIR}/usr/sbin/rx1950-wlan-firmware" \
     "${TARGET_DIR}/usr/sbin/rx1950-blue" \
