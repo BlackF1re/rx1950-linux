@@ -10,6 +10,24 @@ rx1950-linux boot card
 
 The internal Windows Mobile installation is not changed.
 
+Packages
+--------
+rx1950-linux publishes an opkg feed built with the same ARM920T/ARMv4T,
+EABI soft-float and musl ABI as the system image. Do not add unrelated
+OpenWrt, Entware or Debian repositories: their ARM baseline and/or userspace
+ABI is not compatible with this device.
+
+After networking is available:
+
+    opkg update
+    opkg list
+    opkg install nano
+
+The initial feed also includes bash, less, rsync, tmux and tree plus any
+Buildroot runtime dependencies not already provided by the base image. The
+architecture token is versioned so a future incompatible userspace cannot be
+installed accidentally on an older rx1950-linux image.
+
 WLAN / TI TNETW1100B (ACX100)
 -----------------------------
 The ACX driver and RX1950 bus glue are shipped as kernel-matched modules.
