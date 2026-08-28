@@ -1,76 +1,85 @@
-# Build workflow
+# Build and release
 
-The build is a pinned, non-interactive pipeline that produces a raw SD-card
-image and verification material. It can run from a clean checkout on Linux or
-in GitHub Actions.
+The build is pinned and non-interactive. It produces the same ARMv4T userspace, Linux kernel, optional WLAN modules, package feed and SD image locally or in GitHub Actions.
 
-## Inputs
+## Pinned inputs
 
-- Buildroot 2025.02.2, verified before extraction by SHA-256.
-- Linux 6.2, the final upstream release containing the rx1950 machine
-  description, verified before extraction by SHA-256.
-- A HaRET executable downloaded over HTTPS and verified by SHA-256.
-- A Buildroot external tree containing the ARM920T configuration, root overlay
-  and filesystem policy.
-- A fixed two-partition layout: FAT16 boot partition and ext4 root partition.
+| Input | Version / policy |
+| --- | --- |
+| Buildroot | `2025.02.2`, archive SHA-256 verified |
+| Linux | `6.2`, archive SHA-256 verified; last upstream RX1950 machine baseline |
+| ACX WLAN | pinned `acx-mac80211` commit; memory transport only |
+| HaRET | RX1950-proven binary; SHA-256 verified |
+| Target ABI | ARM920T / ARMv4T, EABI, soft-float, musl |
 
-No downloaded source or executable is used until its recorded checksum matches.
+Downloaded build inputs are rejected before use if their recorded checksum does not match.
 
-## Pipeline
+## Local build
 
-1. Validate source contracts and record the build revision.
-2. Build the compact ARM920T Buildroot root filesystem with BusyBox, Dropbear,
-   `opkg`, WLAN tools, ALSA command-line playback and the Matchbox handheld
-   session (TinyX framebuffer server, launcher, panel and on-screen keyboard).
-3. Build the boot-critical Linux 6.2 image from the rx1950-enabled configuration,
-   including built-in ext4 support for the writable root filesystem.
-4. Verify the rootfs and kernel artifact digests before combining them.
-5. Generate the HaRET FAT boot partition and assemble a content-sized MBR
-   image with no reserved tail.
-6. Verify the partition geometry, checksum, compressed form and exact embedded
-   root filesystem, then retain provenance with the sealed payload.
+Required host tools are the same classes installed by `.github/workflows/build-release.yml`.
 
-The generated HaRET script explicitly supplies machine type `952`
-(`MACH_RX1950`). HaRET cannot infer this legacy board identifier from Windows
-Mobile; omitting it stops the boot before the kernel is loaded.
+```sh
+bash scripts/build.sh rootfs
+bash scripts/build.sh kernel
+bash scripts/build.sh image
+```
 
-The root filesystem and kernel build in parallel. The first Buildroot run
-builds its hermetic ARM/musl cross-toolchain and is therefore intentionally the
-longest stage. Actions caches both verified source downloads and the complete
-Buildroot output directory: an unchanged configuration reuses the cross-toolchain
-and built packages, while a configuration change rebuilds only its affected
-targets. The image builds only the boot-critical kernel image. Unreviewed
-generic modules are not compiled, shipped or installed: the stock legacy
-defconfig would add more than one gigabyte of unrelated drivers to a 32 MiB
-handheld image.
+or:
 
-## Output contract
+```sh
+bash scripts/build.sh all
+```
 
-The Actions artifact contains the raw image for inspection. Published releases
-contain the compressed form and:
+Optional `opkg` packages are built with:
 
-- `rx1950-linux-sd.img` - raw seed SD image (currently 65 MiB: 1 MiB MBR gap,
-  16 MiB FAT16 boot partition and 48 MiB ext4 root seed).
-- `rx1950-linux-sd.img.xz` - compressed image distributed in releases.
-- `SHA256SUMS` - checksums of both image forms.
-- `provenance.txt` - build revision and exact source versions.
-- `zImage` and `startup.txt` - inspectable boot payload.
+```sh
+bash scripts/build-opkg-feed.sh
+bash scripts/validate-opkg-feed.sh feed output/packages
+```
 
-## Publishing
+## Reproducibility contract
 
-Pushes to `main` create only a sealed Actions artifact. To create a GitHub
-release, run **Build & Release** manually from `main` and enable publishing.
-The workflow computes the next engineering version itself and the publication
-job consumes the output from the same verified assembly job; it never rebuilds
-the image independently.
+Identical source/configuration and release version must produce identical payload bits. The pipeline therefore fixes or normalizes:
 
-Write the decompressed raw image to the whole SD-card device, not to a file
-inside a preformatted partition. On first Linux boot the root partition and
-filesystem use all remaining card capacity; see [storage.md](storage.md).
+- `SOURCE_DATE_EPOCH=1767225600`, UTC locale/timezone and Linux `KBUILD_BUILD_*` identity;
+- Buildroot `BR2_REPRODUCIBLE` mode;
+- ext4 UUID and directory hash seed, with lazy inode/journal initialization disabled;
+- `/etc/os-release` from the release version rather than Git checkout description;
+- FAT creation metadata (`mkfs.vfat --invariant`);
+- DOS MBR disk signature;
+- WLAN module tar ordering, ownership and timestamps;
+- single-threaded XZ output;
+- non-mutating filesystem verification.
 
-## Hardware boundary
+The Git commit belongs in `provenance.txt`, not in binaries whose source tree is otherwise identical. `scripts/validate-reproducible.sh` rejects loss of these invariants.
 
-An assembled image does not prove that legacy hardware works on a physical
-handheld. Promotion to a supported release requires the complete acceptance
-record in [goals.md](goals.md) and the hardware matrix in
-[hardware.md](hardware.md).
+## CI graph
+
+```text
+Plan
+├── Root filesystem ── Package feed
+└── Kernel
+      │
+Root filesystem + Kernel
+      └── Assemble and verify
+              │
+Package feed ─┴── Publish release (main only)
+```
+
+Rootfs and kernel build independently. Their SHA-256 hand-off manifests are checked before assembly. The package feed is built from the verified Buildroot state and rejected if a package would overwrite the sealed base image, has an incomplete dependency closure or carries the wrong ELF ABI.
+
+The first Buildroot build after a configuration change is intentionally expensive because it builds the ARM/musl toolchain. Exact reusable state is cached; the cache is never allowed to substitute a differently configured rootfs.
+
+## Release assets
+
+A published engineering release contains:
+
+- `rx1950-linux-<version>.img.xz` and `SHA256SUMS`;
+- `provenance.txt`;
+- `zImage` and `kernel-modules.tar`;
+- `startup.txt`;
+- `Packages`, `Packages.gz`, `PACKAGES-SHA256SUMS`, `feed.json` and the `.ipk` files.
+
+A push to `main` runs the full pipeline and publishes only after Plan, rootfs, kernel, feed and sealed-image validation succeed. Publication consumes the already verified artifacts; it does not rebuild them.
+
+Build success is not hardware acceptance. Physical support status lives in [hardware.md](hardware.md).
