@@ -84,6 +84,7 @@ jobs:
         run: |
           bash scripts/validate.sh source
           bash scripts/validate-peripherals.sh source
+          bash scripts/validate-opkg-feed.sh source
 
   rootfs:
     name: Root filesystem
@@ -118,6 +119,7 @@ jobs:
         run: |
           bash scripts/validate-peripherals.sh rootfs output/buildroot.config
           bash scripts/validate-rootfs-payload.sh output/rootfs.ext2
+          bash scripts/validate-opkg-feed.sh rootfs output/rootfs.ext2
       - name: Record root filesystem digest
         run: sha256sum output/rootfs.ext2 output/buildroot.config > output/rootfs.SHA256SUMS
       - name: Save reusable Buildroot state
@@ -131,6 +133,37 @@ jobs:
           name: rootfs-${{ needs.plan.outputs.id }}
           path: output/
           if-no-files-found: error
+
+  packages:
+    name: Package feed
+    needs: [plan, rootfs]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore verified source downloads
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: rx1950-buildroot-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
+          restore-keys: |
+            rx1950-buildroot-sources-${{ runner.os }}-
+      - name: Restore verified base Buildroot state
+        uses: actions/cache/restore@v4
+        with:
+          path: .build/buildroot-output
+          key: rx1950-buildroot-output-v4-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
+      - name: Install package-feed build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs python3
+      - name: Build package feed
+        run: bash scripts/build-opkg-feed.sh
+      - name: Validate package feed
+        run: bash scripts/validate-opkg-feed.sh feed output/packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ needs.plan.outputs.id }}
+          path: output/packages/
+          if-no-files-found: error
+          compression-level: 0
 
   kernel:
     name: Kernel
@@ -194,6 +227,7 @@ jobs:
         run: |
           bash scripts/validate.sh image
           bash scripts/validate-peripherals.sh image
+          bash scripts/validate-opkg-feed.sh rootfs output/rootfs.ext2
       - uses: actions/upload-artifact@v4
         with:
           name: rx1950-linux-${{ needs.plan.outputs.id }}
@@ -209,7 +243,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [plan, assemble]
+    needs: [plan, assemble, packages]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
     runs-on: ubuntu-24.04
     permissions:
@@ -222,7 +256,11 @@ jobs:
         with:
           name: rx1950-linux-${{ needs.plan.outputs.id }}
           path: release
-      - name: Publish verified payload
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-${{ needs.plan.outputs.id }}
+          path: release/packages
+      - name: Publish verified payload and package feed
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.plan.outputs.version }}
@@ -235,4 +273,14 @@ jobs:
           modules="$(find release -type f -name kernel-modules.tar -print -quit)"
           startup="$(find release -type f -name startup.txt -print -quit)"
           test -n "$image" && test -n "$checksums" && test -n "$provenance" && test -n "$kernel" && test -n "$modules" && test -n "$startup"
-          gh release create "$VERSION" "$image" "$checksums" "$provenance" "$kernel" "$modules" "$startup" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "rx1950-linux $VERSION" --generate-notes
+
+          mapfile -t package_assets < <(find release/packages -maxdepth 1 -type f -print | LC_ALL=C sort)
+          test "${#package_assets[@]}" -gt 0
+          test -f release/packages/Packages.gz
+          test -f release/packages/PACKAGES-SHA256SUMS
+
+          gh release create "$VERSION" \
+            "$image" "$checksums" "$provenance" "$kernel" "$modules" "$startup" \
+            "${package_assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "rx1950-linux $VERSION" --generate-notes
