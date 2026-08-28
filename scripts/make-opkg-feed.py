@@ -2,7 +2,7 @@
 """Build a deterministic opkg feed from packages added to a Buildroot config.
 
 The feed is intentionally derived from the same Buildroot output tree as the
-system image.  A base show-info snapshot and base file list describe what the
+system image. A base show-info snapshot and base file list describe what the
 sealed image already provides; only newly enabled target packages are emitted.
 Dependencies that are already part of the base image are therefore omitted from
 opkg metadata, while new target dependencies are emitted as separate ipks.
@@ -91,6 +91,31 @@ def collect_file_owners(build_dir: Path) -> dict[str, set[str]]:
                 continue
             owners.setdefault(package, set()).add(normalize_path(raw_path))
     return owners
+
+
+def filter_final_target_owners(
+    owners: dict[str, set[str]], target: Path
+) -> dict[str, set[str]]:
+    """Discard stale Buildroot manifest entries removed by target-finalize.
+
+    Buildroot package .files-list.txt files describe files at package install
+    time. Finalization subsequently removes development data, manuals, info
+    pages and other target content. Those stale entries must not become opkg
+    payloads or participate in ownership collision checks. os.path.lexists is
+    intentional: dangling symlinks are still real package objects and must be
+    retained and ownership-checked.
+    """
+    if not target.is_dir():
+        die(f"final Buildroot target directory is missing: {target}")
+
+    filtered: dict[str, set[str]] = {}
+    for package, paths in owners.items():
+        final_paths = {
+            path for path in paths if os.path.lexists(target / path)
+        }
+        if final_paths:
+            filtered[package] = final_paths
+    return filtered
 
 
 def actual_target_packages(info: dict[str, dict]) -> set[str]:
@@ -331,7 +356,9 @@ def main() -> None:
     base_info = load_info(args.base_info)
     feed_info = load_info(args.feed_info)
     base_files = read_base_files(args.base_files)
-    file_owners = collect_file_owners(args.build_dir)
+    file_owners = filter_final_target_owners(
+        collect_file_owners(args.build_dir), args.target
+    )
     providers = provider_map(feed_info)
 
     base_packages = set(base_info)
@@ -342,7 +369,7 @@ def main() -> None:
         if file_owners.get(package)
     }
     if not packages_with_files:
-        die("package fragment did not add any target files")
+        die("package fragment did not add any final target files")
 
     path_owner: dict[str, str] = {}
     for package in sorted(packages_with_files):
