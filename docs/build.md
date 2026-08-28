@@ -8,11 +8,12 @@ The build is pinned and non-interactive. It produces the same ARMv4T userspace, 
 | --- | --- |
 | Buildroot | `2025.02.2`, archive SHA-256 verified |
 | Linux | `6.2`, archive SHA-256 verified; last upstream RX1950 machine baseline |
-| ACX WLAN | pinned `acx-mac80211` commit; memory transport only |
+| ACX WLAN | pinned `acx-mac80211` commit; memory transport only; RX1950 MEM IRQ fix applied from `kernel/acx-patches/` |
+| ACX100 firmware | OpenBSD `acx-firmware-1.4p6`; `WLANGEN.BIN`, `RADIO0d.BIN` and `RADIO11.BIN` accepted only when their pinned SHA-256 digests match |
 | HaRET | RX1950-proven binary; SHA-256 verified |
 | Target ABI | ARM920T / ARMv4T, EABI, soft-float, musl |
 
-Downloaded build inputs are rejected before use if their recorded checksum does not match.
+Downloaded build inputs are rejected before use when a pinned payload checksum does not match. The historical OpenBSD firmware vhost is fetched over HTTP because its legacy TLS endpoint is unreliable; integrity comes from the three pinned firmware SHA-256 digests, not from transport security.
 
 ## Local build
 
@@ -48,6 +49,7 @@ Identical source/configuration and release version must produce identical payloa
 - FAT creation metadata (`mkfs.vfat --invariant`);
 - DOS MBR disk signature;
 - WLAN module tar ordering, ownership and timestamps;
+- bundled ACX100 firmware filenames, payload digests and mtimes;
 - single-threaded XZ output;
 - non-mutating filesystem verification.
 
