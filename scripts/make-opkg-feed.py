@@ -32,6 +32,15 @@ ABI = {
     "buildroot": "2025.02.2",
 }
 
+# Buildroot target-finalize hooks add these executables to /etc/shells. Native
+# opkg packages need to reproduce that runtime semantic because target-finalize
+# is a build-time operation and therefore cannot run when a package is installed
+# later on the handheld.
+SHELL_REGISTRATIONS = {
+    "bash": "/bin/bash",
+    "tmux": "/usr/bin/tmux",
+}
+
 
 def die(message: str) -> None:
     raise SystemExit(f"error: {message}")
@@ -230,6 +239,67 @@ def package_size(target: Path, files: list[str]) -> int:
     return (total + 1023) // 1024
 
 
+def add_control_metadata(
+    package: str,
+    files: list[str],
+    control_dir: Path,
+) -> list[str]:
+    """Create opkg metadata that Buildroot itself does not need at image time."""
+    members: list[str] = []
+
+    conffiles = [f"/{path}" for path in files if path.startswith("etc/")]
+    if conffiles:
+        conffile = control_dir / "conffiles"
+        conffile.write_text("\n".join(sorted(conffiles)) + "\n", encoding="utf-8")
+        conffile.chmod(0o644)
+        members.append("conffiles")
+
+    shell_path = SHELL_REGISTRATIONS.get(package)
+    if shell_path is None:
+        return members
+
+    marker = f"/var/lib/rx1950/opkg-shells/{package}"
+    postinst = control_dir / "postinst"
+    postinst.write_text(
+        "#!/bin/sh\n"
+        "set -e\n"
+        f"shell='{shell_path}'\n"
+        f"marker='{marker}'\n"
+        "mkdir -p \"$(dirname \"$marker\")\"\n"
+        "[ -e /etc/shells ] || : > /etc/shells\n"
+        "if ! grep -Fqx \"$shell\" /etc/shells; then\n"
+        "    printf '%s\\n' \"$shell\" >> /etc/shells\n"
+        "    : > \"$marker\"\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    postinst.chmod(0o755)
+    members.append("postinst")
+
+    prerm = control_dir / "prerm"
+    prerm.write_text(
+        "#!/bin/sh\n"
+        "set -e\n"
+        f"shell='{shell_path}'\n"
+        f"marker='{marker}'\n"
+        "if [ -e \"$marker\" ]; then\n"
+        "    if [ -f /etc/shells ]; then\n"
+        "        tmp=/etc/shells.rx1950.$$\n"
+        "        grep -Fvx \"$shell\" /etc/shells > \"$tmp\" || true\n"
+        "        cat \"$tmp\" > /etc/shells\n"
+        "        rm -f \"$tmp\"\n"
+        "    fi\n"
+        "    rm -f \"$marker\"\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    prerm.chmod(0o755)
+    members.append("prerm")
+    return members
+
+
 def build_ipk(
     package: str,
     item: dict,
@@ -266,10 +336,12 @@ def build_ipk(
         control = control_dir / "control"
         control.write_text("\n".join(control_lines) + "\n", encoding="utf-8")
         control.chmod(0o644)
+        control_members = ["control"]
+        control_members.extend(add_control_metadata(package, files, control_dir))
 
         (tmp / "debian-binary").write_text("2.0\n", encoding="ascii")
         (tmp / "debian-binary").chmod(0o644)
-        make_tar(control_dir, tmp / "control.tar.gz", ["control"], epoch)
+        make_tar(control_dir, tmp / "control.tar.gz", control_members, epoch)
         make_tar(target, tmp / "data.tar.gz", files, epoch)
         run(
             [
