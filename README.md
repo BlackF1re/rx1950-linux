@@ -11,9 +11,11 @@ The base image is intentionally small. Additional software comes from a project-
 - SD boot/root filesystem with automatic first-boot expansion.
 - 240x320 framebuffer, PWM backlight, resistive touchscreen and physical keys.
 - Battery/ADC monitoring and red/green/blue LED class devices.
-- USB CDC-NCM recovery network with SSH at `192.168.7.2`.
+- USB CDC-NCM recovery network with SSH at `192.168.7.2`; a host DHCP service such as Windows ICS is acquired automatically without removing the fixed recovery address.
+- HTTPS client support with CA certificates, OpenSSL and curl.
+- Boot-time NTP synchronization when an Internet route becomes available; timezone data and `rx1950-timezone` keep display time user-selectable.
 - Native `opkg` feed; initial optional packages include `bash`, `nano`, `rsync` and `tmux`.
-- TI TNETW1100B/ACX100 WLAN driver and RX1950 board glue are included as isolated modules; physical radio acceptance is still in progress and proprietary firmware is not redistributed.
+- TI TNETW1100B/ACX100 WLAN driver, RX1950 board glue and the verified ACX100 firmware payload are included. The slave-memory IRQ path carries an RX1950-specific fix derived from physical-device traces; end-to-end association acceptance remains a hardware test, not a CI claim.
 
 Audio PCM, IrDA, RTC/suspend acceptance, NAND inspection and the remaining board-level hardware are tracked explicitly rather than advertised early. See [hardware.md](docs/hardware.md) and [hardware-inventory.md](docs/hardware-inventory.md).
 
@@ -21,9 +23,9 @@ Audio PCM, IrDA, RTC/suspend acceptance, NAND inspection and the remaining board
 
 Download `rx1950-linux-<version>.img.xz` from [GitHub Releases](https://github.com/BlackF1re/rx1950-linux/releases), write it as a raw disk image to an SD card, boot Windows Mobile, insert the card and run `haret.exe` from its FAT partition.
 
-The default engineering login is `root` / `rx1950`. Change it before using an untrusted network.
+The engineering image logs in as `root` with no password. It is intentionally configured for trusted local links only; do not expose SSH to an untrusted network.
 
-Full first-boot, USB, package and WLAN steps are in [Quick start](docs/QUICKSTART.md).
+Full first-boot, USB, package, time and WLAN steps are in [Quick start](docs/QUICKSTART.md).
 
 ## Design
 
@@ -35,7 +37,7 @@ Full first-boot, USB, package and WLAN steps are in [Quick start](docs/QUICKSTAR
 
 ## Build and release
 
-Pinned inputs are Buildroot 2025.02.2, Linux 6.2, the RX1950 HaRET binary and a pinned ACX mac80211 revision. A local complete build is:
+Pinned inputs are Buildroot 2025.02.2, Linux 6.2, the RX1950 HaRET binary and a pinned ACX mac80211 revision plus a local slave-memory IRQ patch. The ACX100 firmware is fetched during the build from the OpenBSD firmware package and accepted only when all three payload SHA-256 digests match the pinned values. A local complete build is:
 
 ```sh
 bash scripts/build.sh all
@@ -56,4 +58,4 @@ GitHub Actions builds rootfs and kernel independently, validates the native pack
 
 Start with [docs/README.md](docs/README.md). Hardware claims require physical-device evidence; CI success alone is not treated as proof that a peripheral works electrically.
 
-License: [GNU GPL v2](LICENSE). Imported/upstream components retain their own licence notices.
+License: [GNU GPL v2](LICENSE). Imported/upstream components and binary firmware retain their own licence terms and notices.
