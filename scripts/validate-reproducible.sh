@@ -16,6 +16,7 @@ validate_source() {
 
     grep -Fqx 'BR2_REPRODUCIBLE=y' "$config" || die 'Buildroot reproducible mode is disabled'
     grep -Fq -- "-U ${ROOTFS_UUID}" "$config" || die 'rootfs UUID is not fixed'
+    grep -Fq "hash_seed=${ROOTFS_UUID}" "$config" || die 'ext4 directory hash seed is not fixed'
     grep -Fq 'lazy_itable_init=0,lazy_journal_init=0' "$config" || die 'ext4 lazy initialization is enabled'
     grep -Fq "SOURCE_DATE_EPOCH:-${EPOCH}" "$build" || die 'build epoch is not pinned'
     grep -Fq "SOURCE_DATE_EPOCH:-${EPOCH}" "$feed" || die 'package feed epoch is not pinned'
