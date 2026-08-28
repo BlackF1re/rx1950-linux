@@ -6,6 +6,12 @@ recorded a passing test on an rx1950. **Experimental** means it has booted or
 been detected but lacks the release test suite. Only **Supported** may appear
 in a release claim.
 
+For the lower-level physical inventory — including hardware that exists but is
+not yet usable, unresolved board components, and features known to be absent —
+see [the RX1950 hardware inventory](hardware-inventory.md). The two documents
+use different axes intentionally: this file records release qualification,
+while the inventory records physical existence and Linux implementation state.
+
 ## Platform and interactive hardware
 
 | Subsystem | Known implementation | Status | Required release test |
