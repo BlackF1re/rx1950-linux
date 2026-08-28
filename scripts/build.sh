@@ -82,9 +82,9 @@ prepare_acx() {
 
     for patch_file in "${ROOT_DIR}"/kernel/acx-patches/*.patch; do
         [[ -e "${patch_file}" ]] || continue
-        if patch --directory="${source}" --strip=1 --dry-run --forward --batch < "${patch_file}"; then
-            patch --directory="${source}" --strip=1 --forward --batch < "${patch_file}"
-        elif patch --directory="${source}" --strip=1 --dry-run --reverse --batch < "${patch_file}"; then
+        if patch --directory="${source}" --strip=1 --dry-run --forward --batch < "${patch_file}" >&2; then
+            patch --directory="${source}" --strip=1 --forward --batch < "${patch_file}" >&2
+        elif patch --directory="${source}" --strip=1 --dry-run --reverse --batch < "${patch_file}" >&2; then
             : # Already patched in a reusable local tree.
         else
             die "cannot apply ACX patch ${patch_file}"
