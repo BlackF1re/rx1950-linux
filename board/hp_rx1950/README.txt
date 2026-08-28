@@ -23,10 +23,16 @@ After networking is available:
     opkg list
     opkg install nano
 
-The initial feed also includes bash, less, rsync, tmux and tree plus any
-Buildroot runtime dependencies not already provided by the base image. The
-architecture token is versioned so a future incompatible userspace cannot be
-installed accidentally on an older rx1950-linux image.
+The initial feed includes bash, nano, rsync and tmux plus Buildroot runtime
+dependencies not already provided by the base image. Commands already supplied
+by BusyBox are deliberately not replaced by opkg packages. The architecture
+token is versioned so a future incompatible userspace cannot be installed
+accidentally on an older rx1950-linux image.
+
+Engineering-feed integrity currently relies on HTTPS plus the SHA-256 digests
+embedded in the opkg index and release checksum manifest. Repository signing is
+a separate first-usable-release gate; do not treat the current engineering feed
+as cryptographically signed.
 
 WLAN / TI TNETW1100B (ACX100)
 -----------------------------
