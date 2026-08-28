@@ -1,0 +1,50 @@
+diff --git a/merge.c b/merge.c
+--- a/merge.c
++++ b/merge.c
+@@ -92,8 +92,20 @@ irqreturn_t acx_interrupt(int irq, void *dev_id)
+-	/* Mask all irqs, until we handle them. We will unmask them
+-	 * later in the tasklet. */
+-	write_reg16(adev, IO_ACX_IRQ_MASK, HOST_INT_MASK_ALL);
+-	write_flush(adev);
+-	acx_schedule_task(adev, 0);
++	/*
++	 * The slave-memory transport is sensitive to IRQ latency. Leaving a
++	 * received cause pending while all ACX interrupts are masked can block
++	 * the command engine long enough for the synchronous MEM command poller
++	 * to time out. Latch and ACK MEM causes immediately, then defer only the
++	 * descriptor/info processing. PCI keeps the historical mask/defer path.
++	 */
++	if (IS_MEM(adev)) {
++		adev->irq_reason |= irqmasked;
++		write_reg16(adev, IO_ACX_IRQ_ACK, irqmasked);
++		write_flush(adev);
++		acx_schedule_task(adev, 0);
++	} else {
++		write_reg16(adev, IO_ACX_IRQ_MASK, HOST_INT_MASK_ALL);
++		write_flush(adev);
++		acx_schedule_task(adev, 0);
++	}
+ 
+ 	spin_unlock_irqrestore(&adev->spinlock, flags);
+ 
+@@ -2802,5 +2814,20 @@ void acx_irq_work(struct work_struct *work)
+ 	irqreason = read_reg16(adev, IO_ACX_IRQ_REASON);
++	if (IS_MEM(adev)) {
++		/*
++		 * Causes ACKed in hard IRQ are no longer guaranteed to remain
++		 * visible in IO_ACX_IRQ_REASON. Merge the latched copy with causes
++		 * that arrived while the work item was waiting, then ACK before
++		 * doing potentially expensive RX processing.
++		 */
++		irqreason |= adev->irq_reason;
++		adev->irq_reason = 0;
++	}
+ 	irqmasked = irqreason & ~adev->irq_mask;
+ 	log(L_IRQ, "irqstatus=%04X, irqmasked==%04X\n", irqreason, irqmasked);
+ 
++	if (IS_MEM(adev) && irqmasked) {
++		write_reg16(adev, IO_ACX_IRQ_ACK, irqmasked);
++		write_flush(adev);
++	}
++
+ #if IRQ_ITERATE
