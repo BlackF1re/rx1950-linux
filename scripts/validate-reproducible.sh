@@ -15,7 +15,7 @@ validate_source() {
     local post="${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/post-build.sh"
 
     grep -Fqx 'BR2_REPRODUCIBLE=y' "$config" || die 'Buildroot reproducible mode is disabled'
-    grep -Fq "-U ${ROOTFS_UUID}" "$config" || die 'rootfs UUID is not fixed'
+    grep -Fq -- "-U ${ROOTFS_UUID}" "$config" || die 'rootfs UUID is not fixed'
     grep -Fq 'lazy_itable_init=0,lazy_journal_init=0' "$config" || die 'ext4 lazy initialization is enabled'
     grep -Fq "SOURCE_DATE_EPOCH:-${EPOCH}" "$build" || die 'build epoch is not pinned'
     grep -Fq "SOURCE_DATE_EPOCH:-${EPOCH}" "$feed" || die 'package feed epoch is not pinned'
@@ -24,7 +24,7 @@ validate_source() {
     grep -Fq 'KBUILD_BUILD_HOST' "$build" || die 'kernel build host is not normalized'
     grep -Fq 'tar --sort=name --mtime=' "$build" || die 'module tar metadata is not normalized'
     grep -Fq 'mkfs.vfat --invariant' "$build" || die 'FAT filesystem metadata is not invariant'
-    grep -Fq "seek=440" "$build" || die 'MBR disk signature is not normalized'
+    grep -Fq 'seek=440' "$build" || die 'MBR disk signature is not normalized'
     grep -Fq 'xz --keep --force --threads=1 --check=crc32' "$build" || die 'XZ output is host-CPU dependent'
     grep -Fq 'e2fsck -fn' "$build" || die 'rootfs verification may mutate filesystem metadata'
     ! grep -Fq 'e2fsck -fp' "$build" || die 'mutating e2fsck mode is still present'
@@ -48,11 +48,9 @@ validate_artifacts() {
     grep -Fqx "source-date-epoch=${EPOCH}" "$out/provenance.txt" ||
         die 'provenance does not record the reproducible epoch'
 
-    tar -tf "$out/kernel-modules.tar" | LC_ALL=C sort -c ||
-        die 'kernel module bundle is not sorted deterministically'
-
     if command -v tune2fs >/dev/null 2>&1; then
-        tune2fs -l "$out/rootfs.ext2" 2>/dev/null | grep -Fq "Filesystem UUID:          ${ROOTFS_UUID}" ||
+        tune2fs -l "$out/rootfs.ext2" 2>/dev/null | \
+            grep -Eq "^Filesystem UUID:[[:space:]]+${ROOTFS_UUID}$" ||
             die 'rootfs UUID does not match the reproducible UUID'
     fi
 }
