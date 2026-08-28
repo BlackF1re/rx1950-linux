@@ -25,24 +25,40 @@ Replace `/dev/sdX` with the whole SD device, not a partition. On Windows, use an
 
 Removing the card and resetting returns to the stock Windows Mobile boot path.
 
-## 3. Log in
+## 3. Log in and USB Internet
 
-Local console:
+The engineering image uses a blank root password. On the local console enter only:
 
 ```text
 login: root
-password: rx1950
 ```
 
-The engineering image also exposes USB CDC-NCM networking over the sync connector. Linux keeps `192.168.7.2/24` on `usb0`, so after the host enumerates the USB network adapter:
+USB CDC-NCM keeps the recovery address `192.168.7.2/24` on `usb0` and continuously runs DHCP in parallel. If the PC provides DHCP/NAT — for example Windows Internet Connection Sharing — the PDA automatically adds the host-provided address, default route and DNS while keeping `192.168.7.2`.
+
+Without ICS, put the host side in `192.168.7.0/24` (for example `192.168.7.1`) and connect with:
 
 ```sh
 ssh root@192.168.7.2
 ```
 
-Change the default password before using an untrusted network.
+With Windows ICS, share the Internet-connected adapter to the `UsbNcm Host Device` adapter. Windows normally assigns the USB side `192.168.137.1/24`; the PDA then obtains a `192.168.137.x` lease automatically. You can SSH to that leased address, or add `192.168.7.1/24` as a secondary host address if you also want the fixed recovery address reachable from the PC.
 
-## 4. Packages
+SSH intentionally permits the blank root password because the device is designed for trusted local links. Do not expose it to an untrusted network.
+
+## 4. HTTPS, time and timezone
+
+CA certificates, OpenSSL and curl are included. A background boot service waits for an Internet route and performs a best-effort NTP synchronization without delaying boot.
+
+The kernel clock remains UTC. To select how local time is displayed, use an IANA timezone name; the setting persists on the writable root filesystem:
+
+```sh
+rx1950-timezone Europe/Moscow
+rx1950-timezone
+```
+
+The complete tzdata database is included, so other names such as `Europe/Helsinki`, `Asia/Tomsk` or `Etc/UTC` can be selected the same way.
+
+## 5. Packages
 
 The image contains `opkg` configured only for the project-owned ARMv4T/EABI soft-float/musl feed. Do not add Debian, OpenWrt or Entware feeds.
 
@@ -54,15 +70,15 @@ opkg install nano
 
 The initial optional feed contains `bash`, `nano`, `rsync` and `tmux` plus the dependencies not already present in the base image.
 
-## 5. WLAN
+## 6. WLAN
 
-The onboard adapter is TI TNETW1100B/ACX100. The driver/modules are included, but proprietary firmware is not redistributed.
+The onboard adapter is TI TNETW1100B/ACX100. The driver, RX1950 board glue and verified `WLANGEN.BIN`, `RADIO0d.BIN` and `RADIO11.BIN` firmware payloads are included in the release image.
 
-With temporary internet access over USB:
+The physical RX1950 exposed a slave-memory IRQ starvation bug in the historical ACX mac80211 merge path: after the first RX interrupt the old handler masked the device before deferred work could ACK it, causing later firmware commands to time out. The release build carries a local patch that latches and ACKs MEM IRQ causes immediately while leaving expensive descriptor processing deferred.
+
+Basic checks:
 
 ```sh
-rx1950-wlan-firmware fetch
-rx1950-wlan start
 rx1950-wlan status
 rx1950-wlan scan
 ```
@@ -87,7 +103,7 @@ dmesg | grep -iE 'rx1950-acx|acx|firmware|wlan|cfg80211|mac80211'
 
 The default WLAN mode follows the historical RX1950 wiring and treats GPA11/Blue as the radio-power line. `no-gpa11-power` exists only for controlled hardware diagnosis; see [hardware.md](hardware.md) before using it.
 
-## 6. Where to look next
+## 7. Where to look next
 
 - [Hardware support](hardware.md) — what has actually passed on-device acceptance.
 - [Hardware inventory](hardware-inventory.md) — component-level map and unresolved hardware.
