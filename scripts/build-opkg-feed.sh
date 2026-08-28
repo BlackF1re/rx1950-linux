@@ -89,6 +89,11 @@ main() {
     require find
     require sed
 
+    # target-finalize executes the board post-build hook. Restore its executable
+    # bit explicitly just like the normal rootfs builder does so a cache/archive
+    # round-trip can never make the feed build fail with EACCES.
+    chmod +x "${EXTERNAL_DIR}/board/hp_rx1950/post-build.sh"
+
     local source
     source="$(prepare_buildroot)"
     mkdir -p "${BUILDROOT_OUTPUT}"
