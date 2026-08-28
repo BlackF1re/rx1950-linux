@@ -26,10 +26,10 @@ in a release claim.
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| WLAN | Integrated IEEE 802.11b TI TNETW1100B/ACX100 on the external memory bus; pinned ACX mac80211 slave-memory driver plus isolated RX1950 GPIO/MMIO glue are built as kernel-matched modules; proprietary firmware remains external | Planned | Import firmware, load modules without disturbing SD/root, verify `iw dev`, scan, WPA/WPA2 association, DHCP, DNS, sustained TCP transfer and reconnect; compare historical GPA11 power mode with `no-gpa11-power` and verify Blue LED behaviour. |
+| WLAN | Integrated IEEE 802.11b TI TNETW1100B/ACX100 on the external memory bus; pinned ACX mac80211 MEM driver, isolated RX1950 GPIO/MMIO glue, bundled verified firmware, and a local immediate-ACK MEM IRQ fix derived from physical traces | Experimental | The device now identifies TNETW1100B/MAX2820, loads/validates firmware, creates `wlan0` and delivers EINT16/RX IRQs. Re-test the patched module on hardware, then verify scan, WPA/WPA2 association, DHCP, DNS, sustained TCP transfer and reconnect. |
 | Bluetooth | No integrated controller | Not applicable | SDIO Bluetooth cards are separate optional peripherals. |
 | Infrared | IrDA SIR/CIR port | Planned | `irda` stack discovery and bidirectional transfer with a known peer. |
-| USB device | S3C2410 UDC via 22-pin connector; CDC-NCM Ethernet gadget is enabled in the engineering image for native Windows 11/Linux host support | Experimental | Windows 11 enumerates the inbox `UsbNcm.sys` network adapter without an external INF; `192.168.7.2` answers SSH after a cold boot; disconnect and reconnect work cleanly. |
+| USB device | S3C2410 UDC via 22-pin connector; CDC-NCM Ethernet gadget is enabled in the engineering image for native Windows 11/Linux host support | Experimental | Windows 11 enumerates the inbox `UsbNcm.sys` adapter; fixed `192.168.7.2` and USB SSH are verified. Re-test persistent host DHCP/ICS lease, Internet/DNS, disconnect and reconnect on the release image. |
 | USB host | Connector/dock capability is not assumed | Research required | Identify electrical support before exposing a host-mode configuration. |
 | Serial | Dock connector RS-232 path | Research required | Identify cable and signal levels; console transfer test after confirmation. |
 | SDIO accessories | Slot supports SDIO electrically | Experimental | Each card model gets an individual driver, firmware, power and stability test. |
@@ -52,7 +52,7 @@ in a release claim.
 | HaRET launch | Experimental | The machine type is passed by HaRET and the loader log survives handoff; keep verifying on physical hardware. |
 | FAT boot partition | Experimental | Windows Mobile can read shipped boot files and persistent HaRET diagnostics. |
 | Linux root partition | Experimental | 0.1.13 boots and grows ext4 successfully; re-verify the post-0.1.14 rollback image on physical media. |
-| Console and SSH | Experimental | Local framebuffer console and SSH over USB CDC-NCM are verified on the booting engineering image; still verify reconnect and long-running stability. |
+| Console and SSH | Experimental | Local framebuffer console and SSH over USB CDC-NCM are verified on the booting engineering image; release images intentionally use blank-root local login. Still verify reconnect and long-running stability. |
 | Package management | Planned | CI builds and validates the native ARMv4T/musl feed; on hardware verify `opkg update`, install/remove/reinstall, dependency handling, `/etc` conffile preservation, available-space failure and interrupted-transaction recovery. Cryptographic repository signing remains a separate release gate. |
 | Graphical session | Experimental | The image includes the Matchbox session (TinyX, launcher, panel and on-screen keyboard); verify QVGA startup, stylus, physical navigation, idle RAM and clean exit on the device. |
 
@@ -73,6 +73,27 @@ control-flow change is reverted, the RX1950 DMA platform device is removed from
 the early board path, and optional hwmon registration is isolated from the
 rollback-prone core platform-device array.
 
+## WLAN physical trace record
+
+The first ACX100 hardware bring-up on the current engineering system proved the
+board-level path before the driver fix was written:
+
+- MMIO `0x20000000` responded and the driver identified ACX100/TNETW1100B;
+- EEPROM/config reported form factor `0x03`, radio type `0x0d` Maxim MAX2820,
+  firmware `Rev 1.9.8.b` and station MAC `00:09:2d:a6:34:66`;
+- `WLANGEN.BIN` and `RADIO0d.BIN` uploaded and validated successfully;
+- `wlan0` was registered and EINT16/IRQ64 delivered a real `RX_DATA` cause;
+- the old merged PCI/MEM top-half then masked all ACX interrupts and deferred
+  processing without ACKing the MEM cause. Synchronous command polling started
+  before the worker ran, remained stuck on `irq bits:0x01`, and timed out;
+- the local `kernel/acx-patches/0001-mem-ack-irqs-before-deferred-work.patch`
+  latches and ACKs MEM causes in hard IRQ while keeping RX descriptor work
+  deferred. Physical scan/association acceptance is still required after build.
+
+This evidence rules out the earlier broad hypotheses of missing WLAN power,
+wrong MMIO address, missing firmware and a dead EINT16 line. It does not by
+itself claim successful over-the-air networking with the patched module.
+
 ## Sources and verification record
 
 The published HP specification identifies the S3C2442, 32 MiB RAM, 64 MiB ROM,
@@ -86,10 +107,9 @@ for its boot-critical hardware. The engineering kernel exposes the S3C2442 ADC
 through hwmon while retaining the existing battery driver; raw ADC channels
 remain available for board investigation. The TI WLAN path is an explicit
 optional-module exception: a pinned ACX100 slave-memory port and RX1950 glue are
-now built and validated by CI, but remain **Planned** until the radio is detected
-and exercised on the physical handheld. Proprietary TI firmware is never
-bundled in the release image. The Linux Kernel Driver Database records the
-in-tree machine configuration through Linux 6.2.
+built and validated by CI, while the three ACX100 firmware payloads are bundled
+only after fixed SHA-256 verification. The Linux Kernel Driver Database records
+the in-tree machine configuration through Linux 6.2.
 
 Primary references:
 
