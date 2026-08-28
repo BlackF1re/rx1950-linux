@@ -88,9 +88,10 @@ source)
         BR2_PACKAGE_LIBCURL_OPENSSL=y BR2_PACKAGE_HTOP=y BR2_PACKAGE_EVTEST=y \
         BR2_PACKAGE_I2C_TOOLS=y BR2_PACKAGE_LM_SENSORS=y \
         BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y \
-        BR2_TARGET_TZ_INFO=y BR2_TARGET_GENERIC_ROOT_PASSWD=""; do
+        BR2_TARGET_TZ_INFO=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
     done
+    require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
     require_line 'CONFIG_NTPD=y' "$busybox_fragment" 'BusyBox NTP client is disabled'
     require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="64M"' "$rcfg" 'rootfs seed size is not 64 MiB'
     if grep -Fq 'BR2_PACKAGE_CURL=y' "$rcfg"; then die 'legacy Buildroot BR2_PACKAGE_CURL must not be used'; fi
