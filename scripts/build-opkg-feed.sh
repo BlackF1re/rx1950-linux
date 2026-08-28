@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Build an rx1950-native opkg feed from the exact Buildroot toolchain/state used
 # by the system image. The package job restores the verified base Buildroot
 # cache, then this script builds only the optional package delta and packages
@@ -14,6 +15,11 @@ readonly BUILDROOT_SHA256="4a74e9a6f82ef8660ae2ef865d0ad61a4e9ccd67e2aeef885cae1
 readonly EXTERNAL_DIR="${ROOT_DIR}/buildroot/external/rx1950"
 readonly PACKAGE_FRAGMENT="${EXTERNAL_DIR}/configs/rx1950_packages.fragment"
 readonly BUILDROOT_OUTPUT="${BUILD_DIR}/buildroot-output"
+
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1767225600}"
+export TZ="${TZ:-UTC}"
+export LANG=C
+export LC_ALL=C
 
 mkdir -p "${OUTPUT_DIR}" "${DOWNLOAD_DIR}" "${BUILD_DIR}"
 
@@ -74,8 +80,9 @@ validate_target_abi() {
         BR2_ARM_EABI=y \
         BR2_SOFT_FLOAT=y \
         BR2_ARM_INSTRUCTIONS_ARM=y \
-        BR2_TOOLCHAIN_BUILDROOT_MUSL=y; do
-        grep -Fqx "${requirement}" "${config}" || die "package feed ABI mismatch: ${requirement}"
+        BR2_TOOLCHAIN_BUILDROOT_MUSL=y \
+        BR2_REPRODUCIBLE=y; do
+        grep -Fqx "${requirement}" "${config}" || die "package feed ABI/build mismatch: ${requirement}"
     done
 }
 
@@ -126,14 +133,13 @@ main() {
     make_br "${source}" -j"$(nproc)"
     make_br "${source}" -s show-info > "${OUTPUT_DIR}/feed-show-info.json"
 
-    SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}" \
-        python3 "${ROOT_DIR}/scripts/make-opkg-feed.py" \
-            --base-info "${OUTPUT_DIR}/base-show-info.json" \
-            --feed-info "${OUTPUT_DIR}/feed-show-info.json" \
-            --base-files "${OUTPUT_DIR}/base-files.txt" \
-            --build-dir "${BUILDROOT_OUTPUT}/build" \
-            --target "${BUILDROOT_OUTPUT}/target" \
-            --output "${OUTPUT_DIR}"
+    python3 "${ROOT_DIR}/scripts/make-opkg-feed.py" \
+        --base-info "${OUTPUT_DIR}/base-show-info.json" \
+        --feed-info "${OUTPUT_DIR}/feed-show-info.json" \
+        --base-files "${OUTPUT_DIR}/base-files.txt" \
+        --build-dir "${BUILDROOT_OUTPUT}/build" \
+        --target "${BUILDROOT_OUTPUT}/target" \
+        --output "${OUTPUT_DIR}"
 
     # Build metadata is useful while debugging CI but must not be published as
     # repository content; keep only the feed payload after packaging succeeds.
