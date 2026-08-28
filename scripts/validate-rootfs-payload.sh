@@ -22,6 +22,8 @@ for path in \
     /usr/sbin/rx1950-wlan \
     /usr/sbin/rx1950-wlan-firmware \
     /usr/sbin/rx1950-blue \
+    /etc/opkg/opkg.conf \
+    /etc/opkg/distfeeds.conf \
     /etc/init.d/S10kernel-modules \
     /etc/init.d/S40wlan; do
     has "$path" || die "rootfs payload is missing ${path}"
@@ -33,4 +35,4 @@ if has /lib/firmware/WLANGEN.BIN; then
     die 'rootfs payload illegally contains proprietary WLANGEN.BIN'
 fi
 
-printf 'rootfs WLAN payload: OK\n'
+printf 'rootfs WLAN/package-manager payload: OK\n'
