@@ -1,0 +1,8 @@
+# Optional packages published through the rx1950-linux opkg feed.
+# Keep this list deliberately small: the target has 64 MiB RAM and an ARM920T.
+BR2_PACKAGE_BASH=y
+BR2_PACKAGE_LESS=y
+BR2_PACKAGE_NANO=y
+BR2_PACKAGE_RSYNC=y
+BR2_PACKAGE_TMUX=y
+BR2_PACKAGE_TREE=y
