@@ -1,0 +1,10 @@
+# Optional packages published through the rx1950-linux opkg feed.
+# Keep this list deliberately small: the target has 32 MiB physical RAM and an
+# ARM920T. Do not add standalone packages for commands already provided by the
+# base BusyBox image: replacing an untracked BusyBox symlink would make opkg
+# removal unsafe. In particular, Buildroot 2025.02.2 BusyBox already provides
+# less and tree.
+BR2_PACKAGE_BASH=y
+BR2_PACKAGE_NANO=y
+BR2_PACKAGE_RSYNC=y
+BR2_PACKAGE_TMUX=y

@@ -1,0 +1,112 @@
+#!/bin/sh
+# Install the kernel-matched optional module bundle carried on the FAT boot
+# partition. Keeping these modules outside zImage preserves the proven SD boot
+# path even when an experimental peripheral driver fails.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+BOOT=/dev/mmcblk0p1
+MNT=/mnt/rx1950-boot
+BUNDLE=kernel-modules.tar
+
+log() {
+	printf '%s\n' "rx1950-modules: $*" > /dev/kmsg 2>/dev/null || true
+}
+
+find_boot_mount() {
+	[ -r /proc/mounts ] || return 1
+	while read -r device mountpoint _rest; do
+		[ "$device" = "$BOOT" ] || continue
+		printf '%s\n' "$mountpoint"
+		return 0
+	done < /proc/mounts
+	return 1
+}
+
+validate_bundle() {
+	bundle=$1
+	krel=$2
+	members="/tmp/rx1950-modules.$$.list"
+	rm -f "$members"
+	if ! tar -tf "$bundle" > "$members" 2>/dev/null; then
+		log "cannot read $BUNDLE"
+		rm -f "$members"
+		return 1
+	fi
+
+	have_acx=0
+	have_glue=0
+	unsafe=0
+	while IFS= read -r member; do
+		case "$member" in
+			./|./lib/|./lib/modules/|"./lib/modules/$krel/"|"./lib/modules/$krel/extra/")
+				;;
+			"./lib/modules/$krel/extra/acx-mac80211.ko")
+				have_acx=1
+				;;
+			"./lib/modules/$krel/extra/rx1950_acx.ko")
+				have_glue=1
+				;;
+			*)
+				log "rejecting unexpected path in $BUNDLE: $member"
+				unsafe=1
+				break
+				;;
+		esac
+	done < "$members"
+	rm -f "$members"
+
+	[ "$unsafe" -eq 0 ] || return 1
+	if [ "$have_acx" -ne 1 ] || [ "$have_glue" -ne 1 ]; then
+		log "$BUNDLE does not contain both WLAN modules for running kernel $krel"
+		return 1
+	fi
+	return 0
+}
+
+install_bundle() {
+	krel="$(uname -r)"
+	if [ -r "/lib/modules/$krel/extra/acx-mac80211.ko" ] && \
+	   [ -r "/lib/modules/$krel/extra/rx1950_acx.ko" ]; then
+		depmod -a "$krel" 2>/dev/null || true
+		return 0
+	fi
+
+	[ -b "$BOOT" ] || { log "$BOOT is unavailable"; return 0; }
+	mounted_here=0
+	boot_dir="$(find_boot_mount 2>/dev/null || true)"
+	if [ -z "$boot_dir" ]; then
+		mkdir -p "$MNT"
+		mount -t vfat -o ro "$BOOT" "$MNT" 2>/dev/null || {
+			log "cannot mount boot partition"
+			return 0
+		}
+		boot_dir="$MNT"
+		mounted_here=1
+	fi
+
+	if [ -r "$boot_dir/$BUNDLE" ]; then
+		if validate_bundle "$boot_dir/$BUNDLE" "$krel"; then
+			if tar -xf "$boot_dir/$BUNDLE" -C /; then
+				depmod -a "$krel" 2>/dev/null || true
+				mkdir -p /var/lib/rx1950
+				printf 'kernel=%s\n' "$krel" > /var/lib/rx1950/kernel-modules-installed
+				log "installed optional modules for $krel from $boot_dir"
+			else
+				log "failed to extract $BUNDLE"
+			fi
+		else
+			log "ignored invalid or kernel-mismatched $BUNDLE"
+		fi
+	else
+		log "$BUNDLE is missing from $boot_dir"
+	fi
+
+	[ "$mounted_here" -eq 0 ] || umount "$MNT" 2>/dev/null || true
+}
+
+case "${1:-start}" in
+	start) install_bundle ;;
+	stop) : ;;
+esac

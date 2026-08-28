@@ -13,12 +13,14 @@ fi
 
 printf '\n%s\n' '=== S3C ADC raw channels ==='
 found=0
-for attr in /sys/class/hwmon/hwmon*/adc*_raw; do
+# Linux 6.2 s3c-hwmon creates adc*_raw on its platform device rather than on
+# the hwmon class symlink.  Keep a class fallback for future driver changes.
+for attr in /sys/devices/platform/s3c24xx-adc/s3c-hwmon/adc*_raw \
+            /sys/class/hwmon/hwmon*/device/adc*_raw \
+            /sys/class/hwmon/hwmon*/adc*_raw; do
 	[ -r "$attr" ] || continue
 	found=1
-	hwmon="${attr%/*}"
-	name="$(cat "$hwmon/name" 2>/dev/null || basename "$hwmon")"
-	printf '%s %s=%s\n' "$name" "$(basename "$attr")" "$(cat "$attr" 2>/dev/null || printf '?')"
+	printf '%s=%s\n' "$(basename "$attr")" "$(cat "$attr" 2>/dev/null || printf '?')"
 done
 [ "$found" -eq 1 ] || printf '%s\n' 'none'
 
