@@ -98,18 +98,18 @@ jobs:
           key: rx1950-buildroot-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
           restore-keys: |
             rx1950-buildroot-sources-${{ runner.os }}-
-      - name: Restore stable Buildroot toolchain and package state
+      - name: Restore reusable Buildroot state
         id: rootfs-cache
         uses: actions/cache/restore@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v3-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/**') }}
-      - name: Migrate exact v2 Buildroot cache
+          key: rx1950-buildroot-output-v4-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
+      - name: Migrate exact v3 Buildroot cache
         if: steps.rootfs-cache.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v2-${{ runner.os }}-${{ hashFiles('buildroot/external/**', 'scripts/build.sh') }}
+          key: rx1950-buildroot-output-v3-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/**') }}
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs
       - name: Build root filesystem
@@ -120,12 +120,12 @@ jobs:
           bash scripts/validate-rootfs-payload.sh output/rootfs.ext2
       - name: Record root filesystem digest
         run: sha256sum output/rootfs.ext2 output/buildroot.config > output/rootfs.SHA256SUMS
-      - name: Save stable Buildroot toolchain and package state
+      - name: Save reusable Buildroot state
         if: steps.rootfs-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v3-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/**') }}
+          key: rx1950-buildroot-output-v4-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
       - uses: actions/upload-artifact@v4
         with:
           name: rootfs-${{ needs.plan.outputs.id }}
