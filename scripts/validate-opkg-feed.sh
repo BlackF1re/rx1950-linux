@@ -46,8 +46,18 @@ validate_source() {
         require_line "${requirement}" "${DEFCONFIG}" "rx1950 package ABI requirement missing: ${requirement}"
     done
 
-    for package in BASH LESS NANO RSYNC TMUX TREE; do
+    for package in BASH NANO RSYNC TMUX; do
         require_line "BR2_PACKAGE_${package}=y" "${FRAGMENT}" "initial feed package missing: ${package}"
+    done
+
+    # The default Buildroot 2025.02.2 BusyBox configuration already installs
+    # these commands in the base image. Publishing full replacements through
+    # opkg would overwrite symlinks that are not owned by opkg, so uninstalling
+    # such a package could remove the base command entirely.
+    for package in LESS TREE; do
+        if grep -Fqx "BR2_PACKAGE_${package}=y" "${FRAGMENT}"; then
+            die "feed package ${package} collides with a base BusyBox command"
+        fi
     done
 
     grep -Fq 'base-show-info.json' "${ROOT_DIR}/scripts/build-opkg-feed.sh" || die "feed builder does not compare against the base package set"
