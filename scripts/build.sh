@@ -68,7 +68,9 @@ prepare_kernel() {
 
 prepare_acx() {
     require git
+    require patch
     local source="${BUILD_DIR}/acx-mac80211"
+    local patch_file
     if [[ ! -d "${source}/.git" ]]; then
         rm -rf "${source}"
         git clone --filter=blob:none --no-checkout "${ACX_REPOSITORY}" "${source}"
@@ -77,6 +79,22 @@ prepare_acx() {
     git -C "${source}" checkout --force --detach "${ACX_COMMIT}"
     [[ "$(git -C "${source}" rev-parse HEAD)" == "${ACX_COMMIT}" ]] ||
         die "ACX source is not pinned to ${ACX_COMMIT}"
+
+    for patch_file in "${ROOT_DIR}"/kernel/acx-patches/*.patch; do
+        [[ -e "${patch_file}" ]] || continue
+        if patch --directory="${source}" --strip=1 --dry-run --forward --batch < "${patch_file}"; then
+            patch --directory="${source}" --strip=1 --forward --batch < "${patch_file}"
+        elif patch --directory="${source}" --strip=1 --dry-run --reverse --batch < "${patch_file}"; then
+            : # Already patched in a reusable local tree.
+        else
+            die "cannot apply ACX patch ${patch_file}"
+        fi
+    done
+
+    grep -Fq 'adev->irq_reason |= irqmasked;' "${source}/merge.c" ||
+        die "ACX MEM interrupt latch patch is missing"
+    grep -Fq 'write_reg16(adev, IO_ACX_IRQ_ACK, irqmasked);' "${source}/merge.c" ||
+        die "ACX MEM interrupt ACK patch is missing"
     printf '%s\n' "${source}"
 }
 
@@ -346,7 +364,7 @@ assemble_image() {
         printf 'buildroot=%s\n' "${BUILDROOT_VERSION}"
         printf 'kernel=%s\n' "${KERNEL_VERSION}"
         printf 'acx-source=%s@%s\n' "${ACX_REPOSITORY}" "${ACX_COMMIT}"
-        printf 'acx-firmware=bundled:no\n'
+        printf 'acx-firmware=bundled:yes,verified-sha256\n'
         printf 'haret-version=%s\n' "${HARET_VERSION}"
         printf 'haret-sha256=%s\n' "${HARET_SHA256}"
         printf 'image=%s\n' "${IMAGE_NAME}.img"
