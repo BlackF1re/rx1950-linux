@@ -23,14 +23,13 @@ install_acx_firmware() {
     mkdir -p "${DOWNLOAD_DIR}" "${TARGET_DIR}/lib/firmware"
 
     # firmware.openbsd.org currently serves this historical package over HTTP
-    # more reliably than its broken legacy TLS vhost.  Transport trust is not
+    # more reliably than its broken legacy TLS vhost. Transport trust is not
     # used here: every installed binary is pinned to its known SHA-256 digest.
     if [[ ! -s "${ACX_ARCHIVE}" ]]; then
         curl --fail --location --retry 3 "${ACX_URL}" --output "${ACX_ARCHIVE}"
     fi
 
     tmp="$(mktemp -d)"
-    trap 'rm -rf "${tmp}"' RETURN
     tar -xzf "${ACX_ARCHIVE}" -C "${tmp}"
 
     main="$(find "${tmp}" -type f -name tiacx100 -print -quit)"
@@ -38,6 +37,7 @@ install_acx_firmware() {
     radio11="$(find "${tmp}" -type f -name tiacx100r11 -print -quit)"
     [[ -n "$main" && -n "$radio0d" && -n "$radio11" ]] || {
         rm -f "${ACX_ARCHIVE}"
+        rm -rf "$tmp"
         echo 'ACX100 firmware package is incomplete' >&2
         return 1
     }
@@ -46,6 +46,7 @@ install_acx_firmware() {
        ! verify_sha256 "$radio0d" "$ACX_RADIO0D_SHA256" ||
        ! verify_sha256 "$radio11" "$ACX_RADIO11_SHA256"; then
         rm -f "${ACX_ARCHIVE}"
+        rm -rf "$tmp"
         echo 'ACX100 firmware checksum mismatch' >&2
         return 1
     fi
@@ -58,7 +59,6 @@ install_acx_firmware() {
         "${TARGET_DIR}/lib/firmware/RADIO0d.BIN" \
         "${TARGET_DIR}/lib/firmware/RADIO11.BIN"
     rm -rf "$tmp"
-    trap - RETURN
 }
 
 install -d -m 0755 \
