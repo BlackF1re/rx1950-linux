@@ -155,7 +155,18 @@ jobs:
       - name: Install package-feed build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs python3
       - name: Build package feed
-        run: bash scripts/build-opkg-feed.sh
+        shell: bash
+        run: |
+          mkdir -p output
+          build_log=output/package-feed-build.log
+          if bash scripts/build-opkg-feed.sh >"$build_log" 2>&1; then
+            echo "Package feed build completed successfully."
+          else
+            status=$?
+            echo "Package feed build failed; showing the final 120 log lines:" >&2
+            tail -n 120 "$build_log" >&2 || true
+            exit "$status"
+          fi
       - name: Validate package feed
         run: bash scripts/validate-opkg-feed.sh feed output/packages
       - uses: actions/upload-artifact@v4
