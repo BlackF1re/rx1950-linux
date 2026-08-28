@@ -10,6 +10,7 @@ on:
       - 'scripts/**'
       - 'docs/**'
       - 'README.md'
+      - 'LICENSE'
       - '.github/workflows/**'
   pull_request:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - 'scripts/**'
       - 'docs/**'
       - 'README.md'
+      - 'LICENSE'
       - '.github/workflows/**'
   workflow_dispatch:
     inputs:
@@ -38,6 +40,14 @@ concurrency:
 
 env:
   BUILD_ID: ${{ github.sha }}
+  SOURCE_DATE_EPOCH: '1767225600'
+  TZ: UTC
+  LANG: C
+  LC_ALL: C
+  KBUILD_BUILD_TIMESTAMP: '@1767225600'
+  KBUILD_BUILD_USER: rx1950-linux
+  KBUILD_BUILD_HOST: reproducible
+  KBUILD_BUILD_VERSION: '1'
 
 jobs:
   plan:
@@ -45,6 +55,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       id: ${{ steps.meta.outputs.id }}
+      tree: ${{ steps.meta.outputs.tree }}
       version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +65,7 @@ jobs:
         shell: bash
         run: |
           echo "id=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
 
           latest_major=-1
           latest_minor=-1
@@ -80,16 +92,20 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Next engineering release: ${version}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source tree: $(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_STEP_SUMMARY"
       - name: Validate source contract
         run: |
           bash scripts/validate.sh source
           bash scripts/validate-peripherals.sh source
           bash scripts/validate-opkg-feed.sh source
+          bash scripts/validate-reproducible.sh source
 
   rootfs:
     name: Root filesystem
     needs: plan
     runs-on: ubuntu-24.04
+    env:
+      RX1950_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - name: Restore verified source downloads
@@ -104,13 +120,13 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v4-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
-      - name: Migrate exact v3 Buildroot cache
+          key: rx1950-buildroot-output-v5-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
+      - name: Migrate exact v4 Buildroot cache
         if: steps.rootfs-cache.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v3-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/**') }}
+          key: rx1950-buildroot-output-v4-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs
       - name: Build root filesystem
@@ -127,17 +143,20 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v4-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
+          key: rx1950-buildroot-output-v5-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
       - uses: actions/upload-artifact@v4
         with:
           name: rootfs-${{ needs.plan.outputs.id }}
           path: output/
           if-no-files-found: error
+          compression-level: 0
 
   packages:
     name: Package feed
     needs: [plan, rootfs]
     runs-on: ubuntu-24.04
+    env:
+      RX1950_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - name: Restore verified source downloads
@@ -151,7 +170,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v4-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
+          key: rx1950-buildroot-output-v5-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
       - name: Install package-feed build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs python3
       - name: Build package feed
@@ -214,6 +233,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       RX1950_IMAGE_NAME: rx1950-linux-${{ needs.plan.outputs.version }}
+      SOURCE_TREE: ${{ needs.plan.outputs.tree }}
+      RX1950_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - name: Restore verified HaRET toolchain
@@ -239,6 +260,7 @@ jobs:
           bash scripts/validate.sh image
           bash scripts/validate-peripherals.sh image
           bash scripts/validate-opkg-feed.sh rootfs output/rootfs.ext2
+          bash scripts/validate-reproducible.sh artifacts output
       - uses: actions/upload-artifact@v4
         with:
           name: rx1950-linux-${{ needs.plan.outputs.id }}
@@ -251,6 +273,7 @@ jobs:
             output/kernel-modules.tar
             board/hp_rx1950/startup.txt
           if-no-files-found: error
+          compression-level: 0
 
   publish:
     name: Publish release
