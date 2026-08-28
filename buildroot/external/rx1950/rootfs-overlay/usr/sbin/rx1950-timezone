@@ -1,0 +1,28 @@
+#!/bin/sh
+# Persist the timezone used to present the UTC system clock.
+
+set -u
+ZONEINFO=/usr/share/zoneinfo
+TIMEZONE=/etc/timezone
+LOCALTIME=/etc/localtime
+
+case "${1:-}" in
+    '')
+        cat "$TIMEZONE" 2>/dev/null || printf 'Etc/UTC\n'
+        exit 0
+        ;;
+    *'..'*|/*)
+        printf 'invalid timezone: %s\n' "$1" >&2
+        exit 2
+        ;;
+esac
+
+zone=$1
+[ -f "$ZONEINFO/$zone" ] || {
+    printf 'unknown timezone: %s\n' "$zone" >&2
+    exit 1
+}
+
+printf '%s\n' "$zone" > "$TIMEZONE"
+ln -snf "$ZONEINFO/$zone" "$LOCALTIME"
+printf 'timezone: %s\n' "$zone"
