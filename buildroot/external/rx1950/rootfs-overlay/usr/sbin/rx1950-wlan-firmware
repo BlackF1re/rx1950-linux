@@ -1,8 +1,7 @@
 #!/bin/sh
-# Install ACX100 firmware without redistributing proprietary TI blobs in the
-# rx1950-linux image. Firmware can be copied to the FAT boot partition by the
-# user or fetched explicitly from OpenBSD's separately distributed firmware
-# package.
+# Manage the ACX100 firmware shipped in release images. Manual import remains
+# available for recovery; fetch uses OpenBSD's historical package and verifies
+# the exact firmware payloads before installing them.
 
 set -u
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
@@ -11,9 +10,18 @@ export PATH
 DEST=/lib/firmware
 BOOT=/dev/mmcblk0p1
 MNT=/mnt/rx1950-boot
-OPENBSD_URL=${RX1950_ACX_FIRMWARE_URL:-https://firmware.openbsd.org/firmware/7.7/acx-firmware-1.4p6.tgz}
+OPENBSD_URL=${RX1950_ACX_FIRMWARE_URL:-http://firmware.openbsd.org/firmware/7.7/acx-firmware-1.4p6.tgz}
+MAIN_SHA256=3d92318dadef22b1d1b062925ef66bac2ad48a0fd4fc83b88dcabba38c182b7b
+RADIO0D_SHA256=ee75c05bb8a17a7978abbbc0f38fb79b1915c1e2357889e65657a39024d5b3a3
+RADIO11_SHA256=e005a93a0b463e01edba2b79038b54c29a7932efee61c851a2ac644b8a4e5dd4
 
 say() { printf '%s\n' "$*"; }
+
+verify_sha256() {
+	file=$1
+	expected=$2
+	printf '%s  %s\n' "$expected" "$file" | sha256sum -c -s
+}
 
 find_boot_mount() {
 	[ -r /proc/mounts ] || return 1
@@ -42,7 +50,7 @@ install_radios_from_dir() {
 		base="$(basename "$src")"
 		suffix="$(printf '%s' "$base" | sed -n 's/^[Rr][Aa][Dd][Ii][Oo]\([0-9A-Fa-f][0-9A-Fa-f]\)\.[Bb][Ii][Nn]$/\1/p')"
 		[ -n "$suffix" ] || continue
-		suffix="$(printf '%s' "$suffix" | tr 'a-f' 'A-F')"
+		suffix="$(printf '%s' "$suffix" | tr 'A-F' 'a-f')"
 		cp "$src" "$DEST/RADIO${suffix}.BIN"
 		chmod 0644 "$DEST/RADIO${suffix}.BIN"
 		installed=1
@@ -56,7 +64,7 @@ install_radios_from_dir() {
 			[0-9A-Fa-f][0-9A-Fa-f]) ;;
 			*) continue ;;
 		esac
-		suffix="$(printf '%s' "$suffix" | tr 'a-f' 'A-F')"
+		suffix="$(printf '%s' "$suffix" | tr 'A-F' 'a-f')"
 		cp "$src" "$DEST/RADIO${suffix}.BIN"
 		chmod 0644 "$DEST/RADIO${suffix}.BIN"
 		installed=1
@@ -108,28 +116,31 @@ import_boot() {
 
 fetch_openbsd() {
 	command -v curl >/dev/null 2>&1 || { say "curl is unavailable" >&2; return 1; }
+	command -v sha256sum >/dev/null 2>&1 || { say "sha256sum is unavailable" >&2; return 1; }
 	tmp="/tmp/rx1950-acx-fw.$$"
 	rm -rf "$tmp"
-	mkdir -p "$tmp/unpack"
+	mkdir -p "$tmp/unpack" "$tmp/selected"
 	trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
-	say "Downloading separately distributed ACX firmware from OpenBSD..."
-	curl --fail --location --proto '=https' --tlsv1.2 "$OPENBSD_URL" -o "$tmp/acx.tgz" || return 1
+	say "Downloading ACX100 firmware from OpenBSD..."
+	curl --fail --location "$OPENBSD_URL" -o "$tmp/acx.tgz" || return 1
 	tar -xzf "$tmp/acx.tgz" -C "$tmp/unpack" || return 1
 
 	main="$(find "$tmp/unpack" -type f -name tiacx100 2>/dev/null | head -n 1)"
-	[ -n "$main" ] || main="$(find "$tmp/unpack" -type f -name WLANGEN.BIN 2>/dev/null | head -n 1)"
-	[ -n "$main" ] || { say "ACX100 main firmware not found in downloaded package" >&2; return 1; }
+	radio0d="$(find "$tmp/unpack" -type f -name tiacx100r0D 2>/dev/null | head -n 1)"
+	radio11="$(find "$tmp/unpack" -type f -name tiacx100r11 2>/dev/null | head -n 1)"
+	[ -n "$main" ] && [ -n "$radio0d" ] && [ -n "$radio11" ] || {
+		say "ACX100 firmware files not found in downloaded package" >&2
+		return 1
+	}
 
-	mkdir -p "$tmp/selected"
+	verify_sha256 "$main" "$MAIN_SHA256" || { say "WLANGEN firmware checksum mismatch" >&2; return 1; }
+	verify_sha256 "$radio0d" "$RADIO0D_SHA256" || { say "RADIO0d firmware checksum mismatch" >&2; return 1; }
+	verify_sha256 "$radio11" "$RADIO11_SHA256" || { say "RADIO11 firmware checksum mismatch" >&2; return 1; }
+
 	cp "$main" "$tmp/selected/tiacx100"
-	for src in $(find "$tmp/unpack" -type f -name 'tiacx100r??' 2>/dev/null); do
-		cp "$src" "$tmp/selected/$(basename "$src")"
-	done
-	for src in $(find "$tmp/unpack" -type f -name 'RADIO??.BIN' 2>/dev/null); do
-		cp "$src" "$tmp/selected/$(basename "$src")"
-	done
-
+	cp "$radio0d" "$tmp/selected/tiacx100r0D"
+	cp "$radio11" "$tmp/selected/tiacx100r11"
 	import_dir "$tmp/selected"
 }
 
