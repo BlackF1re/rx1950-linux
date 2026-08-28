@@ -1,6 +1,6 @@
 #!/bin/sh
 # Install the kernel-matched optional module bundle carried on the FAT boot
-# partition.  Keeping these modules outside zImage preserves the proven SD boot
+# partition. Keeping these modules outside zImage preserves the proven SD boot
 # path even when an experimental peripheral driver fails.
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
@@ -14,6 +14,16 @@ log() {
 	printf '%s\n' "rx1950-modules: $*" > /dev/kmsg 2>/dev/null || true
 }
 
+find_boot_mount() {
+	[ -r /proc/mounts ] || return 1
+	while read -r device mountpoint _rest; do
+		[ "$device" = "$BOOT" ] || continue
+		printf '%s\n' "$mountpoint"
+		return 0
+	done < /proc/mounts
+	return 1
+}
+
 install_bundle() {
 	krel="$(uname -r)"
 	if [ -r "/lib/modules/$krel/extra/acx-mac80211.ko" ] && \
@@ -23,27 +33,29 @@ install_bundle() {
 	fi
 
 	[ -b "$BOOT" ] || { log "$BOOT is unavailable"; return 0; }
-	mkdir -p "$MNT"
 	mounted_here=0
-	if ! grep -q " $MNT " /proc/mounts 2>/dev/null; then
+	boot_dir="$(find_boot_mount 2>/dev/null || true)"
+	if [ -z "$boot_dir" ]; then
+		mkdir -p "$MNT"
 		mount -t vfat -o ro "$BOOT" "$MNT" 2>/dev/null || {
 			log "cannot mount boot partition"
 			return 0
 		}
+		boot_dir="$MNT"
 		mounted_here=1
 	fi
 
-	if [ -r "$MNT/$BUNDLE" ]; then
-		if tar -xf "$MNT/$BUNDLE" -C /; then
+	if [ -r "$boot_dir/$BUNDLE" ]; then
+		if tar -xf "$boot_dir/$BUNDLE" -C /; then
 			depmod -a "$krel" 2>/dev/null || true
 			mkdir -p /var/lib/rx1950
 			printf 'kernel=%s\n' "$krel" > /var/lib/rx1950/kernel-modules-installed
-			log "installed optional modules for $krel"
+			log "installed optional modules for $krel from $boot_dir"
 		else
 			log "failed to extract $BUNDLE"
 		fi
 	else
-		log "$BUNDLE is missing from boot partition"
+		log "$BUNDLE is missing from $boot_dir"
 	fi
 
 	[ "$mounted_here" -eq 0 ] || umount "$MNT" 2>/dev/null || true
