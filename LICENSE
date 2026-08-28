@@ -158,8 +158,8 @@ code means all the source code for all modules it contains, plus any
 associated interface definition files, plus the scripts used to
 control compilation and installation of the executable.  However, as a
 special exception, the source code distributed need not include
-anything that is normally distributed (in either source or binary form)
-with the major components (compiler, kernel, and so on) of the
+anything that is normally distributed (in either source or binary
+form) with the major components (compiler, kernel, and so on) of the
 operating system on which the executable runs, unless that component
 itself accompanies the executable.
 
@@ -218,7 +218,7 @@ such claims; this section has the sole purpose of protecting the
 integrity of the free software distribution system, which is
 implemented by public license practices.  Many people have made
 generous contributions to the wide range of software distributed
-through that system in reliance on consistent application of this
+through that system in reliance on consistent application of that
 system; it is up to the author/donor to decide if he or she is willing
 to distribute software through any other system and a licensee cannot
 impose that choice.
@@ -244,7 +244,7 @@ specifies a version number of this License which applies to it and "any
 later version", you have the option of following the terms and conditions
 either of that version or of any later version published by the Free
 Software Foundation.  If the Program does not specify a version number of
-this License, you may choose any version ever published by the Free Software
+the License, you may choose any version ever published by the Free Software
 Foundation.
 
   10. If you wish to incorporate parts of the Program into other free
