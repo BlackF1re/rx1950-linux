@@ -311,7 +311,23 @@ jobs:
           test -f release/packages/PACKAGES-SHA256SUMS
 
           gh release create "$VERSION" \
-            "$image" "$checksums" "$provenance" "$kernel" "$modules" "$startup" \
+            "$image#Primary SD-card image" \
+            "$checksums" "$provenance" "$kernel" "$modules" "$startup" \
             "${package_assets[@]}" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "rx1950-linux $VERSION" --generate-notes
+
+          # GitHub sorts the asset list itself and exposes no manual ordering
+          # control.  Put the image first in the release body as the canonical
+          # primary download while retaining individual opkg feed assets.
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json body --jq .body > release/generated-notes.md
+          {
+            printf '## Primary download\n\n'
+            printf '[Download the verified SD-card image](https://github.com/%s/releases/download/%s/rx1950-linux-%s.img.xz)\n\n' \
+              "$GITHUB_REPOSITORY" "$VERSION" "$VERSION"
+            printf 'Write this compressed raw image to the SD card. The remaining assets are checksums, recovery files, and the built-in opkg package feed.\n\n'
+            cat release/generated-notes.md
+          } > release/release-notes.md
+          gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --notes-file release/release-notes.md

@@ -53,6 +53,8 @@ for path in \
     /etc/init.d/S48xserver \
     /etc/init.d/S50matchbox \
     /usr/bin/Xorg \
+    /usr/lib/xorg/modules/libshadow.so \
+    /usr/lib/xorg/modules/libfbdevhw.so \
     /usr/lib/xorg/modules/drivers/fbdev_drv.so \
     /usr/lib/xorg/modules/input/evdev_drv.so \
     /etc/X11/xorg.conf \
@@ -90,5 +92,10 @@ extract /etc/init.d/S20zram "${tmp}/S20zram"
 grep -Fq 'lzo-rle' "${tmp}/S20zram" || die 'zram compressor is not lzo-rle'
 extract /etc/init.d/S48xserver "${tmp}/S48xserver"
 grep -Fq 'Xorg :0' "${tmp}/S48xserver" || die 'Xorg is not started at boot'
+extract /etc/X11/xorg.conf "${tmp}/xorg.conf"
+for module in fb shadow fbdevhw; do
+    grep -Eq "^[[:space:]]*Load[[:space:]]+\"${module}\"" "${tmp}/xorg.conf" ||
+        die "Xorg does not preload the ${module} module required by fbdev on musl"
+done
 
 printf 'rootfs WLAN/USB/GUI/zram/regulatory payload: OK\n'
