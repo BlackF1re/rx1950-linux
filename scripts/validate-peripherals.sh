@@ -106,7 +106,7 @@ source)
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
     require_line 'CONFIG_NTPD=y' "$busybox_fragment" 'BusyBox NTP client is disabled'
     require_line 'CONFIG_TIMEOUT=y' "$busybox_fragment" 'BusyBox timeout is required for bounded radio health checks'
-    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="64M"' "$rcfg" 'rootfs seed size is not 64 MiB'
+    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="512M"' "$rcfg" 'rootfs seed size is not 512 MiB'
     if grep -Fq 'BR2_PACKAGE_CURL=y' "$rcfg"; then die 'legacy Buildroot BR2_PACKAGE_CURL must not be used'; fi
 
     require_fragment '/proc/self/mountinfo' "$grow" 'root grower still relies on /dev/root alias'
@@ -176,7 +176,7 @@ rootfs)
         require_line "$req" "$cfg" "generated rootfs dropped: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
-    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="64M"' "$cfg" 'generated rootfs seed is not 64 MiB'
+    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="512M"' "$cfg" 'generated rootfs seed is not 512 MiB'
     ;;
 
 image)
