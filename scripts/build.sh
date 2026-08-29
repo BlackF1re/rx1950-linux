@@ -12,6 +12,8 @@ readonly KERNEL_VERSION="6.2"
 readonly KERNEL_SHA256="74862fa8ab40edae85bb3385c0b71fe103288bce518526d63197800b3cbdecb1"
 readonly ACX_REPOSITORY="https://github.com/piernov/acx-mac80211.git"
 readonly ACX_COMMIT="a282ba2502ac3b10cb6dbf16a35f7ad54e759779"
+readonly ACX_FIRMWARE_VERSION="1.4p6"
+readonly ACX_FIRMWARE_SHA256="47719a4ecb0e2a486e376e40fae8c79e56233b3cd88150e8c55a92879b4819a8"
 readonly HARET_VERSION="2011-06-07-rx1950"
 readonly HARET_SHA256="5831d7cc8aba6ebd08709893101deca9da78e38ecde519a57adedfb164c86902"
 readonly KERNEL_OFFSET=0x1000000
@@ -38,12 +40,32 @@ require() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1
 sha256() { printf '%s  %s\n' "$2" "$1" | sha256sum --check --status; }
 
 download() {
-    local url="$1" destination="$2" expected="$3"
+    local url="$1" destination="$2" expected="$3" protocols="${4:-=https}"
     if [[ ! -f "${destination}" ]] || ! sha256 "${destination}" "${expected}"; then
+        local temporary="${destination}.download"
         rm -f "${destination}"
-        curl --fail --location --retry 3 --proto '=https' --tlsv1.2 "${url}" --output "${destination}"
+        rm -f "${temporary}"
+        if ! curl --fail --location --retry 3 --proto "${protocols}" \
+            "${url}" --output "${temporary}"; then
+            rm -f "${temporary}"
+            die "failed to download ${url}"
+        fi
+        if ! sha256 "${temporary}" "${expected}"; then
+            rm -f "${temporary}"
+            die "checksum mismatch for ${url}"
+        fi
+        mv "${temporary}" "${destination}"
     fi
     sha256 "${destination}" "${expected}" || die "checksum mismatch for ${destination}"
+}
+
+prepare_acx_firmware() {
+    local archive="${DOWNLOAD_DIR}/acx-firmware-${ACX_FIRMWARE_VERSION}.tgz"
+    # The historical OpenBSD firmware endpoint has a mismatched TLS
+    # certificate. Pin the complete archive digest instead of trusting HTTP.
+    download \
+        "http://firmware.openbsd.org/firmware/7.7/acx-firmware-${ACX_FIRMWARE_VERSION}.tgz" \
+        "${archive}" "${ACX_FIRMWARE_SHA256}" '=http'
 }
 
 prepare_buildroot() {
@@ -135,6 +157,9 @@ build_rootfs() {
     require make
     chmod +x "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/post-build.sh"
     local source
+    # Fetch and authenticate small external payloads before the expensive
+    # Buildroot compilation so a transient mirror response fails immediately.
+    prepare_acx_firmware
     source="$(prepare_buildroot)"
     local out="${BUILD_DIR}/buildroot-output"
     mkdir -p "${out}"

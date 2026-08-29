@@ -4,8 +4,8 @@ set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ROOTFS="${1:-${ROOT_DIR}/output/rootfs.ext2}"
-readonly MAIN_SHA256="3d92318dadef22b1d1b062925ef66bac2ad48a0fd4fc83b88dcabba38c182b7b"
-readonly RADIO0D_SHA256="ee75c05bb8a17a7978abbbc0f38fb79b1915c1e2357889e65657a39024d5b3a3"
+readonly MAIN_SHA256="4f05913c940c2455b267545b12d93ad81fa5eebb0cbee22a2c7588c50525b4f0"
+readonly RADIO0D_SHA256="6a4a7fbb24a328a88261bc2a507b2a0bf63c91e831e3f1a8caa4f6599b2215e6"
 readonly RADIO11_SHA256="e005a93a0b463e01edba2b79038b54c29a7932efee61c851a2ac644b8a4e5dd4"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
