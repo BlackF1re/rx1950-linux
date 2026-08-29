@@ -196,6 +196,18 @@ build_rootfs() {
     local out="${BUILD_DIR}/buildroot-output"
     mkdir -p "${out}"
     make -C "${source}" O="${out}" BR2_EXTERNAL="${ROOT_DIR}/buildroot/external/rx1950" rx1950_defconfig
+
+    # A fallback Buildroot cache may contain completed package stamps from a
+    # nearby defconfig. Buildroot does not notice newly-enabled subprograms in
+    # an already-built package (for example amixer inside alsa-utils), so the
+    # old stamp can silently produce an image that disagrees with .config.
+    # Rebuild the small feature-bearing packages whose payload is part of our
+    # sealed-image contract while retaining the expensive compiler/sysroot
+    # cache. This is intentionally done before the normal dependency build.
+    make -C "${source}" O="${out}" \
+        alsa-utils-dirclean \
+        xapp_xinput-dirclean \
+        xapp_xinput-calibrator-dirclean
     make -C "${source}" O="${out}" -j"$(nproc)"
     cp "${out}/images/rootfs.ext2" "${OUTPUT_DIR}/rootfs.ext2"
     cp "${out}/.config" "${OUTPUT_DIR}/buildroot.config"
