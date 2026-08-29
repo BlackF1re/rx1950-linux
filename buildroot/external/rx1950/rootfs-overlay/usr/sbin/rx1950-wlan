@@ -11,6 +11,7 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
 
 PIDFILE=/var/run/wpa_supplicant-rx1950.pid
+DHCP_PIDFILE=/var/run/udhcpc-wlan.pid
 CONF=/etc/wpa_supplicant.conf
 BLUE_TRIGGER=/sys/class/leds/Blue/trigger
 LOCKDIR=/run/rx1950-wlan.lock
@@ -146,6 +147,7 @@ start_radio() {
 }
 
 stop_radio() {
+	disconnect_radio
 	if [ -s "$PIDFILE" ]; then
 		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
 		ifname="$(iface 2>/dev/null || true)"
@@ -209,14 +211,56 @@ connect_radio() {
 		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
 		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
 	fi
+	if [ -s "$DHCP_PIDFILE" ]; then
+		pid="$(cat "$DHCP_PIDFILE" 2>/dev/null || true)"
+		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+		rm -f "$DHCP_PIDFILE"
+	fi
 	rm -f "$PIDFILE"
 	ip link set "$ifname" up || return 1
-	wpa_supplicant -B -P "$PIDFILE" -i "$ifname" -c "$CONF" || return 1
-	udhcpc -i "$ifname" -b -t 5 -T 2 -A 5 >/dev/null 2>&1
+	# ACX100 firmware scanning cannot carry the extra probe-request IEs sent by
+	# modern nl80211 wpa_supplicant. The driver's WEXT compatibility path does
+	# not request those IEs and is verified to associate with WPA2/CCMP.
+	wpa_supplicant -B -D wext -P "$PIDFILE" -i "$ifname" -c "$CONF" || return 1
+	attempt=0
+	while [ "$attempt" -lt 20 ]; do
+		if wpa_cli -i "$ifname" status 2>/dev/null | grep -qx 'wpa_state=COMPLETED'; then
+			break
+		fi
+		attempt=$((attempt + 1))
+		sleep 1
+	done
+	if [ "$attempt" -ge 20 ]; then
+		printf '%s\n' 'Wi-Fi association timed out' >&2
+		disconnect_radio
+		return 1
+	fi
+	# Stay in the foreground and fail after a bounded number of attempts. The
+	# old -b mode left a daemon broadcasting DHCP discovery indefinitely.
+	udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q -t 5 -T 2 -A 5 || {
+		printf '%s\n' 'associated, but DHCP did not provide an address' >&2
+		return 1
+	}
 	if command -v rx1950-time-sync >/dev/null 2>&1 &&
 	   ! pidof rx1950-time-sync >/dev/null 2>&1; then
 		rx1950-time-sync >/dev/null 2>&1 &
 	fi
+}
+
+disconnect_radio() {
+	ifname="$(iface 2>/dev/null || true)"
+	if [ -s "$DHCP_PIDFILE" ]; then
+		pid="$(cat "$DHCP_PIDFILE" 2>/dev/null || true)"
+		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+	fi
+	rm -f "$DHCP_PIDFILE"
+	if [ -s "$PIDFILE" ]; then
+		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+		[ -z "$ifname" ] || wpa_cli -i "$ifname" terminate >/dev/null 2>&1 || true
+		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+	fi
+	rm -f "$PIDFILE"
+	[ -z "$ifname" ] || ip addr flush dev "$ifname" || true
 }
 
 acquire_lock || exit 1
@@ -227,8 +271,9 @@ case "${1:-status}" in
 	status) status_radio ;;
 	scan) scan_radio ;;
 	connect) connect_radio ;;
+	disconnect) disconnect_radio ;;
 	*)
-		printf '%s\n' 'usage: rx1950-wlan {start [historical|no-gpa11-power]|stop|restart [historical|no-gpa11-power]|status|scan|connect}' >&2
+		printf '%s\n' 'usage: rx1950-wlan {start [historical|no-gpa11-power]|stop|restart [historical|no-gpa11-power]|status|scan|connect|disconnect}' >&2
 		exit 2
 		;;
 esac

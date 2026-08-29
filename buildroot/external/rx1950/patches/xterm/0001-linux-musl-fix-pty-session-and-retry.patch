@@ -1,0 +1,38 @@
+From 2b5d27b1e33a9a73d508c68f44a88e37a878d034 Mon Sep 17 00:00:00 2001
+From: Павел Левицкий <55582873+BlackF1re@users.noreply.github.com>
+Date: Sun, 30 Aug 2026 00:00:00 +0700
+Subject: [PATCH] main: fix PTY session setup and retry on Linux musl
+
+xterm's child only calls setsid() when one of several legacy feature macros is
+defined.  Buildroot's Linux/musl configuration defines none of them, so
+TIOCSCTTY fails with EPERM.  The parent then enters the PTY_BAD handshake path
+and hands the child a replacement PTY which has not been unlocked, producing
+an endless EIO retry loop and consuming the CPU without creating a window.
+
+Linux always provides setsid() here.  Also grant and unlock every replacement
+PTY before advertising it to the child, just as spawnXTerm() does for the
+initial PTY.
+
+Signed-off-by: Павел Левицкий <55582873+BlackF1re@users.noreply.github.com>
+---
+ main.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/main.c b/main.c
+index f1518ee..aeaffa7 100644
+--- a/main.c
++++ b/main.c
+@@ -4354,2 +4354,3 @@ spawnXTerm(XtermWidget xw, unsigned line_speed)
+-#if defined(_POSIX_SOURCE) || defined(SVR4) || defined(__convex__) || defined(__SCO__) || defined(__QNX__)
+-	    int pgrp = setsid();	/* variable may not be used... */
++#if defined(_POSIX_SOURCE) || defined(SVR4) || defined(__convex__) || defined(__SCO__) || defined(__QNX__) || \
++    defined(__linux__)
++	    int pgrp = setsid();	/* variable may not be used... */
+@@ -5432 +5433,6 @@ spawnXTerm(XtermWidget xw, unsigned line_speed)
+-		    handshake.status = PTY_NEW;
++#if defined(USE_USG_PTYS) || defined(HAVE_POSIX_OPENPT)
++		    grantpt(screen->respond);
++		    unlockpt(screen->respond);
++		    TRACE_GET_TTYSIZE(screen->respond, "after retry unlockpt");
++#endif
++		    handshake.status = PTY_NEW;

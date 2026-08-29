@@ -131,12 +131,18 @@ case "${1:-source}" in
     test -s "${ROOT_DIR}/kernel/patches/0003-s3c24xx-defer-uart-activation.patch"
     test ! -e "${ROOT_DIR}/kernel/patches/0001-rx1950-add-early-led-boot-markers.patch"
     test ! -e "${ROOT_DIR}/kernel/patches/0002-rx1950-mark-zimage-entry-with-green-led.patch"
-    validate_patch_syntax "${ROOT_DIR}"/kernel/patches/*.patch
+    validate_patch_syntax "${ROOT_DIR}"/kernel/patches/*.patch \
+      "${ROOT_DIR}"/buildroot/external/rx1950/patches/xterm/*.patch
     grep -qx 'BR2_arm920t=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_ARM_EABI=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_SOFT_FLOAT=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_ARM_INSTRUCTIONS_ARM=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_TOOLCHAIN_BUILDROOT_MUSL=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_PACKAGE_MATCHBOX_COMMON=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_PACKAGE_MATCHBOX_COMMON_PDA=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_PACKAGE_DIALOG=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_RX1950_PATH)/patches"' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -Fq 'defined(__linux__)' "${ROOT_DIR}/buildroot/external/rx1950/patches/xterm/0001-linux-musl-fix-pty-session-and-retry.patch"
     grep -qx 'BR2_TARGET_GENERIC_GETTY=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"

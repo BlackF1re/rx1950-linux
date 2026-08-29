@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Settings
+Comment=rx1950 control center
+Exec=rx1950-settings-launcher
+Icon=minisys.png
+Terminal=false
+Type=Application
+Categories=Settings;System;
+SingleInstance=True

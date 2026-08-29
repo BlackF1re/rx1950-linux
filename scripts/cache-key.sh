@@ -17,6 +17,17 @@ canonical_build_file() {
         grep -Ev '^[[:space:]]*(#|$)'
 }
 
+canonical_patch() {
+    # Patch mail headers and signatures do not affect the built payload. Hash
+    # the complete diff (including modes and rename metadata), but stop at the
+    # standard mail-patch signature separator.
+    sed -e 's/\r$//' "$1" | awk '
+        /^diff --git / { in_diff=1 }
+        in_diff && $0 == "-- " { exit }
+        in_diff { print }
+    '
+}
+
 case "${1:-}" in
     rootfs)
         {
@@ -25,6 +36,13 @@ case "${1:-}" in
             canonical_kconfig "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
             canonical_build_file "${ROOT_DIR}/buildroot/external/rx1950/Config.in"
             canonical_build_file "${ROOT_DIR}/buildroot/external/rx1950/external.mk"
+            if [[ -d "${ROOT_DIR}/buildroot/external/rx1950/patches" ]]; then
+                while IFS= read -r patch_file; do
+                    printf 'patch=%s\n' "${patch_file#"${ROOT_DIR}/"}"
+                    canonical_patch "${patch_file}"
+                done < <(find "${ROOT_DIR}/buildroot/external/rx1950/patches" \
+                    -type f -name '*.patch' -print | LC_ALL=C sort)
+            fi
         } | sha256sum | cut -d' ' -f1
         ;;
     *)

@@ -1,21 +1,42 @@
 #!/bin/sh
-# Start the intentionally small local PDA session after the Xorg fbdev server.
+# Start a complete but intentionally small PDA session after the Xorg server.
+
+export DISPLAY=:0.0
+export HOME=/root
+
+start_applet() {
+    "$@" >/var/log/"$1".log 2>&1 &
+}
 
 case "$1" in
     start)
-        export DISPLAY=:0.0
         attempts=0
         while [ ! -S /tmp/.X11-unix/X0 ] && [ "$attempts" -lt 10 ]; do
             sleep 1
             attempts=$((attempts + 1))
         done
         [ -S /tmp/.X11-unix/X0 ] || exit 0
-        matchbox-window-manager &
-        matchbox-desktop &
-        matchbox-panel &
-        matchbox-keyboard &
+        # MBOpus has the compact high-contrast controls designed for a PDA.
+        # The keyboard is deliberately not started here: the tray button owns
+        # its lifetime so it consumes no RAM and no screen space while hidden.
+        matchbox-window-manager -theme MBOpus -use_titlebar yes \
+            -use_dialog_mode const-horiz -use_desktop_mode plain \
+            >/var/log/matchbox-window-manager.log 2>&1 &
+        matchbox-desktop >/var/log/matchbox-desktop.log 2>&1 &
+        matchbox-panel --orientation south --size 26 --no-session --no-menu \
+            >/var/log/matchbox-panel.log 2>&1 &
+        sleep 1
+
+        start_applet mb-applet-menu-launcher
+        start_applet mb-applet-launcher -l mbterm.png mb-applet-xterm-wrapper.sh
+        start_applet mb-applet-launcher -l signal-81-100.png rx1950-wifi-launcher
+        start_applet mb-applet-launcher -l minisys.png rx1950-settings-launcher
+        start_applet mb-applet-launcher -l matchbox-keyboard.png rx1950-keyboard
+        start_applet mb-applet-clock
         ;;
     stop)
-        killall matchbox-keyboard matchbox-panel matchbox-desktop matchbox-window-manager 2>/dev/null || true
+        killall matchbox-keyboard mb-applet-clock mb-applet-launcher \
+            mb-applet-menu-launcher matchbox-panel matchbox-desktop \
+            matchbox-window-manager 2>/dev/null || true
         ;;
 esac

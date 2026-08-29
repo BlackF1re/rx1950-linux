@@ -41,6 +41,18 @@ for path in \
     /usr/sbin/rx1950-timezone \
     /usr/sbin/rx1950-wlan \
     /usr/sbin/rx1950-wlan-firmware \
+    /usr/sbin/rx1950-settings \
+    /usr/sbin/rx1950-wifi-ui \
+    /usr/bin/rx1950-keyboard \
+    /usr/bin/rx1950-settings-launcher \
+    /usr/bin/rx1950-wifi-launcher \
+    /usr/bin/dialog \
+    /usr/bin/xterm \
+    /usr/bin/mb-applet-menu-launcher \
+    /usr/share/matchbox/vfolders/Root.directory \
+    /usr/share/pixmaps/mbup.png \
+    /usr/share/applications/rx1950-settings.desktop \
+    /usr/share/applications/rx1950-wifi.desktop \
     /usr/lib/rx1950/build-epoch \
     /usr/lib/rx1950/build-date-utc \
     /usr/sbin/rx1950-blue \
@@ -104,6 +116,17 @@ extract /etc/init.d/S20zram "${tmp}/S20zram"
 grep -Fq 'lzo-rle' "${tmp}/S20zram" || die 'zram compressor is not lzo-rle'
 extract /etc/init.d/S48xserver "${tmp}/S48xserver"
 grep -Fq 'Xorg :0' "${tmp}/S48xserver" || die 'Xorg is not started at boot'
+extract /etc/init.d/S50matchbox "${tmp}/S50matchbox"
+grep -Fq 'mb-applet-menu-launcher' "${tmp}/S50matchbox" || die 'application menu applet is not started'
+grep -Fq 'rx1950-keyboard' "${tmp}/S50matchbox" || die 'keyboard tray toggle is not started'
+if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${tmp}/S50matchbox"; then
+    die 'on-screen keyboard is still started unconditionally'
+fi
+extract /usr/sbin/rx1950-wlan "${tmp}/rx1950-wlan"
+grep -Fq 'udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q' "${tmp}/rx1950-wlan" ||
+    die 'WLAN DHCP is not foregrounded and bounded'
+grep -Fq 'wpa_supplicant -B -D wext' "${tmp}/rx1950-wlan" ||
+    die 'WLAN does not use the ACX100-compatible WEXT backend'
 extract /etc/X11/xorg.conf "${tmp}/xorg.conf"
 grep -Fq 'Option "TransformationMatrix" "-1.285855985 0.008767978 1.134934000 0.002143120 -1.318328347 1.152815066 0 0 1"' "${tmp}/xorg.conf" ||
     die 'measured touchscreen calibration is missing'

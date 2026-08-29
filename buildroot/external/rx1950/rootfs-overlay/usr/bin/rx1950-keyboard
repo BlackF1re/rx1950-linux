@@ -1,0 +1,57 @@
+#!/bin/sh
+# Toggle the on-screen keyboard and persist its selected layout.
+
+set -u
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+export DISPLAY="${DISPLAY:-:0.0}"
+
+STATE=/etc/default/rx1950-keyboard
+LAYOUT=us
+[ ! -r "$STATE" ] || . "$STATE"
+
+valid_layout() {
+    case "$1" in
+        us|ru|fr|fi|dvorak|extended|numpad) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+start_keyboard() {
+    valid_layout "$LAYOUT" || LAYOUT=us
+    if ! pidof matchbox-keyboard >/dev/null 2>&1; then
+        matchbox-keyboard "$LAYOUT" >/var/log/matchbox-keyboard.log 2>&1 &
+    fi
+}
+
+case "${1:-toggle}" in
+    toggle)
+        if pidof matchbox-keyboard >/dev/null 2>&1; then
+            killall matchbox-keyboard
+        else
+            start_keyboard
+        fi
+        ;;
+    show) start_keyboard ;;
+    hide) killall matchbox-keyboard 2>/dev/null || true ;;
+    layout)
+        requested=${2:-}
+        valid_layout "$requested" || {
+            printf 'unsupported keyboard layout: %s\n' "$requested" >&2
+            exit 2
+        }
+        was_running=false
+        pidof matchbox-keyboard >/dev/null 2>&1 && was_running=true
+        printf 'LAYOUT=%s\n' "$requested" > "$STATE"
+        LAYOUT=$requested
+        if $was_running; then
+            killall matchbox-keyboard 2>/dev/null || true
+            start_keyboard
+        fi
+        ;;
+    status) printf '%s\n' "$LAYOUT" ;;
+    *)
+        printf 'usage: rx1950-keyboard {toggle|show|hide|layout NAME|status}\n' >&2
+        exit 2
+        ;;
+esac

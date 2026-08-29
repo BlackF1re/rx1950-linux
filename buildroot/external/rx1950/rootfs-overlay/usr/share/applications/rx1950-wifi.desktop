@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Wi-Fi
+Comment=Scan and connect to wireless networks
+Exec=rx1950-wifi-launcher
+Icon=signal-81-100.png
+Terminal=false
+Type=Application
+Categories=Settings;Network;
+SingleInstance=True

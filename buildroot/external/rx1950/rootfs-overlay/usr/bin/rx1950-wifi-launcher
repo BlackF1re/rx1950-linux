@@ -1,0 +1,7 @@
+#!/bin/sh
+
+export DISPLAY="${DISPLAY:-:0.0}"
+lock=/run/rx1950-wifi-ui.lock
+mkdir "$lock" 2>/dev/null || exit 0
+trap 'rmdir "$lock" 2>/dev/null || true' EXIT HUP INT TERM
+xterm -ut -title Wi-Fi -fn 6x10 -geometry 38x27 -e rx1950-wifi-ui

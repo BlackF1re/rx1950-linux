@@ -113,7 +113,9 @@ source)
         BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y \
         BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
         BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
-        BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y; do
+        BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
+        BR2_PACKAGE_MATCHBOX_COMMON=y BR2_PACKAGE_MATCHBOX_COMMON_PDA=y \
+        BR2_PACKAGE_DIALOG=y BR2_PACKAGE_XTERM=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
@@ -148,6 +150,23 @@ source)
     require_fragment 'echo none > "$LED/trigger"' "$blue" 'Blue LED cannot return to manual mode in diagnostic independent mode'
     require_fragment 'rx1950-wlan start historical' "$wlan_init" 'boot WLAN path does not follow the historical RX1950 wiring'
     require_fragment 'Xorg :0 -config /etc/X11/xorg.conf' "$xserver" 'Xorg framebuffer server is not started'
+    require_fragment 'mb-applet-menu-launcher' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'Matchbox application menu is not started'
+    if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox"; then
+        die 'on-screen keyboard must not occupy the desktop at boot'
+    fi
+    require_fragment 'udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q' "$wlan" 'WLAN DHCP is not bounded'
+    require_fragment 'wpa_supplicant -B -D wext' "$wlan" 'WLAN must use the ACX100-compatible WEXT backend'
+    for gui_script in \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/mb-applet-xterm-wrapper.sh" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-keyboard" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-settings-launcher" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-settings" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-wifi-ui"; do
+        test -s "$gui_script" || die "GUI script is missing: $gui_script"
+        sh -n "$gui_script" || die "GUI script has invalid shell syntax: $gui_script"
+    done
     require_line 'dest root /' "$opkg" 'opkg root destination missing'
     require_line 'option lists_dir /var/lib/opkg/lists' "$opkg" 'opkg list directory missing'
     if grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "$opkg"; then die 'engineering opkg config must not use an unverified binary feed'; fi

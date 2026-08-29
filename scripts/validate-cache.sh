@@ -24,11 +24,23 @@ cp "${ROOT_DIR}/buildroot/external/rx1950/Config.in" \
 cp "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig" \
    "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment" \
    "${temporary}/buildroot/external/rx1950/configs/"
+cp -R "${ROOT_DIR}/buildroot/external/rx1950/patches" \
+   "${temporary}/buildroot/external/rx1950/"
 
 printf '\n# cache-key comment probe\n' >> "${temporary}/buildroot/external/rx1950/configs/rx1950_defconfig"
 printf '\n# cache-key comment probe\n' >> "${temporary}/buildroot/external/rx1950/external.mk"
 comment_key="$(RX1950_CACHE_ROOT="${temporary}" "${ROOT_DIR}/scripts/cache-key.sh" rootfs)"
 [[ "${comment_key}" == "${rootfs_key}" ]] || die 'comments unexpectedly invalidate rootfs state'
+sed -i 's/^Subject: .*/Subject: [PATCH] cache metadata probe/' \
+    "${temporary}/buildroot/external/rx1950/patches/xterm/0001-linux-musl-fix-pty-session-and-retry.patch"
+metadata_key="$(RX1950_CACHE_ROOT="${temporary}" "${ROOT_DIR}/scripts/cache-key.sh" rootfs)"
+[[ "${metadata_key}" == "${rootfs_key}" ]] || die 'patch mail metadata unexpectedly invalidates rootfs state'
+sed -i 's/defined(__linux__)/defined(__FreeBSD__)/' \
+    "${temporary}/buildroot/external/rx1950/patches/xterm/0001-linux-musl-fix-pty-session-and-retry.patch"
+patch_key="$(RX1950_CACHE_ROOT="${temporary}" "${ROOT_DIR}/scripts/cache-key.sh" rootfs)"
+[[ "${patch_key}" != "${rootfs_key}" ]] || die 'a package source patch does not invalidate rootfs state'
+cp "${ROOT_DIR}/buildroot/external/rx1950/patches/xterm/0001-linux-musl-fix-pty-session-and-retry.patch" \
+   "${temporary}/buildroot/external/rx1950/patches/xterm/"
 sed -i 's/^BR2_CCACHE=y$/# BR2_CCACHE is not set/' \
     "${temporary}/buildroot/external/rx1950/configs/rx1950_defconfig"
 config_key="$(RX1950_CACHE_ROOT="${temporary}" "${ROOT_DIR}/scripts/cache-key.sh" rootfs)"
