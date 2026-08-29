@@ -55,7 +55,7 @@ prepare_acx_firmware() {
     # certificate. Pin the complete archive digest instead of trusting HTTP.
     download \
         "http://firmware.openbsd.org/firmware/7.7/acx-firmware-${ACX_FIRMWARE_VERSION}.tgz" \
-        "${archive}" "${ACX_FIRMWARE_SHA256}" '=http'
+        "${archive}" "${ACX_FIRMWARE_SHA256}" '=http,https'
 }
 
 prepare_buildroot() {

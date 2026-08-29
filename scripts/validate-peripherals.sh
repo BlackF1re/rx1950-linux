@@ -92,6 +92,7 @@ source)
     require_fragment 'test_and_clear_bit(ACX_FLAG_SCANNING' "$acx_scan_patch" 'ACX scan completion is not serialized'
     require_fragment "readonly ACX_COMMIT=\"${ACX_COMMIT}\"" "$sources_lock" 'ACX source commit is not pinned'
     require_fragment 'source "${ROOT_DIR}/scripts/sources.lock.sh"' "$build" 'build does not consume the pinned source lock'
+    require_fragment "'=http,https'" "$build" 'legacy ACX firmware redirect cannot reach HTTPS'
     require_fragment 'kernel/acx-patches/*.patch' "$build" 'local ACX patch set is not applied'
     require_fragment 'CONFIG_ACX_MAC80211_MEM=m' "$build" 'ACX memory transport not built'
     require_fragment 'CONFIG_ACX_MAC80211_PCI=n' "$build" 'unneeded ACX PCI transport enabled'
