@@ -1,0 +1,29 @@
+#!/bin/sh
+# Replace an obviously invalid RTC value before TLS, package downloads and
+# file timestamp comparisons use it. NTP later replaces this safe floor.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+STAMP=/usr/lib/rx1950/build-date-utc
+EPOCH=/usr/lib/rx1950/build-epoch
+
+case "${1:-}" in
+    start)
+        [ -r "$STAMP" ] && [ -r "$EPOCH" ] || exit 0
+        now="$(date -u +%s 2>/dev/null || printf 0)"
+        floor="$(cat "$EPOCH" 2>/dev/null || printf 0)"
+        case "$now:$floor" in
+            *[!0-9:]*|0:*|*:0) exit 0 ;;
+        esac
+        # A dead/corrupt RTC is commonly either near 1970 or, on this board,
+        # many years in the future. Do not alter plausible user-set clocks.
+        ceiling=$((floor + 157852800))
+        if [ "$now" -lt "$floor" ] || [ "$now" -gt "$ceiling" ]; then
+            date -u -s "$(cat "$STAMP")" >/dev/null 2>&1 || exit 1
+            hwclock -w >/dev/null 2>&1 || true
+            printf '%s\n' 'rx1950: invalid RTC replaced with image build time' \
+                >/dev/kmsg 2>/dev/null || true
+        fi
+        ;;
+esac

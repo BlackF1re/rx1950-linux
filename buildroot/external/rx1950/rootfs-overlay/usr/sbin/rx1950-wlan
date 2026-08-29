@@ -139,12 +139,9 @@ start_radio() {
 		*) printf '%s\n' "invalid REGDOMAIN: $REGDOMAIN" >&2; return 1 ;;
 	esac
 	ip link set "$ifname" up
-	# A wlan netdev can exist while the ACX command engine is already wedged.
-	# Require one complete bounded scan before claiming that the radio is ready.
-	if ! timeout 20 iw dev "$ifname" scan >/run/rx1950-wlan-scan.log 2>&1; then
-		printf '%s\n' 'ACX radio health scan failed; interface is not ready.' >&2
-		return 1
-	fi
+	# Scanning is an explicit user operation. Forcing it here used to trigger
+	# the ACX watchdog during every boot and then falsely report readiness after
+	# firmware recovery, even when the scan produced no BSS results.
 	printf '%s\n' "WLAN ready: $ifname"
 }
 
@@ -216,6 +213,10 @@ connect_radio() {
 	ip link set "$ifname" up || return 1
 	wpa_supplicant -B -P "$PIDFILE" -i "$ifname" -c "$CONF" || return 1
 	udhcpc -i "$ifname" -b -t 5 -T 2 -A 5 >/dev/null 2>&1
+	if command -v rx1950-time-sync >/dev/null 2>&1 &&
+	   ! pidof rx1950-time-sync >/dev/null 2>&1; then
+		rx1950-time-sync >/dev/null 2>&1 &
+	fi
 }
 
 acquire_lock || exit 1

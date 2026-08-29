@@ -10,6 +10,8 @@ readonly BUILDROOT_VERSION="2025.02.2"
 readonly BUILDROOT_SHA256="4a74e9a6f82ef8660ae2ef865d0ad61a4e9ccd67e2aeef885cae1165581ed5ac"
 readonly KERNEL_VERSION="6.2"
 readonly KERNEL_SHA256="74862fa8ab40edae85bb3385c0b71fe103288bce518526d63197800b3cbdecb1"
+readonly WIRELESS_REGDB_VERSION="2025.02.20"
+readonly WIRELESS_REGDB_SHA256="57f8e7721cf5a880c13ae0c202edbb21092a060d45f9e9c59bcd2a8272bfa456"
 readonly ACX_REPOSITORY="https://github.com/piernov/acx-mac80211.git"
 readonly ACX_COMMIT="a282ba2502ac3b10cb6dbf16a35f7ad54e759779"
 readonly ACX_FIRMWARE_VERSION="1.4p6"
@@ -86,6 +88,30 @@ prepare_kernel() {
         tar --extract --file "${archive}" --directory "${BUILD_DIR}"
     fi
     printf '%s\n' "${source}"
+}
+
+prepare_regdb() {
+    local archive="${DOWNLOAD_DIR}/wireless-regdb-${WIRELESS_REGDB_VERSION}.tar.xz"
+    local stage="${BUILD_DIR}/wireless-regdb-${WIRELESS_REGDB_VERSION}"
+    download \
+        "https://cdn.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-${WIRELESS_REGDB_VERSION}.tar.xz" \
+        "${archive}" "${WIRELESS_REGDB_SHA256}"
+    if [[ ! -s "${stage}/regulatory.db" || ! -s "${stage}/regulatory.db.p7s" ]]; then
+        rm -rf "${stage}"
+        mkdir -p "${stage}"
+        tar --extract --file "${archive}" --directory "${stage}" --strip-components=1
+    fi
+    test -s "${stage}/regulatory.db" || die "wireless regulatory database is missing"
+    test -s "${stage}/regulatory.db.p7s" || die "wireless regulatory signature is missing"
+    printf '%s\n' "${stage}"
+}
+
+install_kernel_regdb() {
+    local kernel_source="$1" regdb_source
+    regdb_source="$(prepare_regdb)"
+    mkdir -p "${kernel_source}/firmware"
+    install -m 0644 "${regdb_source}/regulatory.db" "${kernel_source}/firmware/regulatory.db"
+    install -m 0644 "${regdb_source}/regulatory.db.p7s" "${kernel_source}/firmware/regulatory.db.p7s"
 }
 
 prepare_acx() {
@@ -192,6 +218,8 @@ validate_kernel_config() {
         'CONFIG_UNUSED_BOARD_FILES=y'
         'CONFIG_MODULES=y'
         'CONFIG_FW_LOADER=y'
+        'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"'
+        'CONFIG_EXTRA_FIRMWARE_DIR="firmware"'
         'CONFIG_WIRELESS=y'
         'CONFIG_CFG80211=y'
         'CONFIG_MAC80211=y'
@@ -204,6 +232,7 @@ validate_kernel_config() {
         'CONFIG_ZRAM_DEF_COMP_LZORLE=y'
         'CONFIG_MMC_S3C=y'
         'CONFIG_FB_S3C2410=y'
+        '# CONFIG_MTD_BLOCK is not set'
         '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set'
         'CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"'
         'CONFIG_CMDLINE_FORCE=y'
@@ -294,6 +323,9 @@ build_kernel() {
     source="$(prepare_kernel)"
     apply_kernel_patches "${source}"
     validate_kernel_source "${source}"
+    # cfg80211 is built in and initializes before the SD root filesystem is
+    # mounted. Embed the authenticated database so its first request succeeds.
+    install_kernel_regdb "${source}"
     local out="${BUILD_DIR}/kernel-output"
     rm -rf "${out}"
     mkdir -p "${out}"

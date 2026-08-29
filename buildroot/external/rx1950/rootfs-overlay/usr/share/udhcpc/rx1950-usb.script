@@ -82,6 +82,10 @@ case "${1:-}" in
         done
         printf 'rx1950-usb-dhcp: lease=%s router=%s dns=%s\n' \
             "$lease_addr" "${router:-none}" "${dns:-none}" > /dev/kmsg 2>/dev/null || true
+        if command -v rx1950-time-sync >/dev/null 2>&1 &&
+           ! pidof rx1950-time-sync >/dev/null 2>&1; then
+            rx1950-time-sync >/dev/null 2>&1 &
+        fi
         ;;
     leasefail|nak)
         # Keep the fixed 192.168.7.2 recovery address; DHCP is optional.

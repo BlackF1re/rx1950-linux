@@ -37,9 +37,12 @@ for path in \
     /usr/share/zoneinfo/Etc/UTC \
     /usr/sbin/ntpd \
     /usr/sbin/rx1950-time-sync \
+    /usr/sbin/rx1950-usb-dhcp \
     /usr/sbin/rx1950-timezone \
     /usr/sbin/rx1950-wlan \
     /usr/sbin/rx1950-wlan-firmware \
+    /usr/lib/rx1950/build-epoch \
+    /usr/lib/rx1950/build-date-utc \
     /usr/sbin/rx1950-blue \
     /usr/share/udhcpc/rx1950-usb.script \
     /etc/default/dropbear \
@@ -47,18 +50,27 @@ for path in \
     /etc/opkg/distfeeds.conf \
     /etc/init.d/S10kernel-modules \
     /etc/init.d/S20zram \
+    /etc/init.d/S02clock-sanity \
+    /etc/init.d/S30alsa \
     /etc/init.d/S35usb-gadget \
     /etc/init.d/S38time-sync \
     /etc/init.d/S40wlan \
     /etc/init.d/S48xserver \
     /etc/init.d/S50matchbox \
     /usr/bin/Xorg \
+    /usr/bin/amixer \
+    /usr/bin/arecord \
+    /usr/sbin/alsactl \
+    /usr/bin/speaker-test \
+    /usr/bin/xinput \
+    /usr/bin/xinput_calibrator \
     /usr/lib/xorg/modules/libshadow.so \
     /usr/lib/xorg/modules/libfbdevhw.so \
     /usr/lib/xorg/modules/drivers/fbdev_drv.so \
     /usr/lib/xorg/modules/input/evdev_drv.so \
     /etc/X11/xorg.conf \
     /lib/firmware/regulatory.db \
+    /lib/firmware/regulatory.db.p7s \
     /lib/firmware/WLANGEN.BIN \
     /lib/firmware/RADIO0d.BIN \
     /lib/firmware/RADIO11.BIN; do
@@ -82,8 +94,8 @@ grep -Eq '^DROPBEAR_ARGS="[^"]*-B[^"]*"$' "${tmp}/dropbear" ||
     die 'Dropbear does not allow the intentionally blank local root password'
 
 extract /etc/init.d/S35usb-gadget "${tmp}/S35usb-gadget"
-grep -Fq 'udhcpc -f -i usb0' "${tmp}/S35usb-gadget" ||
-    die 'USB DHCP client is not persistent'
+grep -Fq 'rx1950-usb-dhcp' "${tmp}/S35usb-gadget" ||
+    die 'bounded USB DHCP supervisor is not enabled'
 extract /etc/init.d/S38time-sync "${tmp}/S38time-sync"
 grep -Fq 'rx1950-time-sync' "${tmp}/S38time-sync" ||
     die 'boot-time NTP synchronization is not enabled'
@@ -93,6 +105,8 @@ grep -Fq 'lzo-rle' "${tmp}/S20zram" || die 'zram compressor is not lzo-rle'
 extract /etc/init.d/S48xserver "${tmp}/S48xserver"
 grep -Fq 'Xorg :0' "${tmp}/S48xserver" || die 'Xorg is not started at boot'
 extract /etc/X11/xorg.conf "${tmp}/xorg.conf"
+grep -Fq 'Option "TransformationMatrix" "-1.285855985 0.008767978 1.134934000 0.002143120 -1.318328347 1.152815066 0 0 1"' "${tmp}/xorg.conf" ||
+    die 'measured touchscreen calibration is missing'
 for module in fb shadow fbdevhw; do
     grep -Eq "^[[:space:]]*Load[[:space:]]+\"${module}\"" "${tmp}/xorg.conf" ||
         die "Xorg does not preload the ${module} module required by fbdev on musl"

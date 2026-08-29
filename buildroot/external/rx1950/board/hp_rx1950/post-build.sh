@@ -77,9 +77,15 @@ install -d -m 0755 \
     "${TARGET_DIR}/mnt/data" \
     "${TARGET_DIR}/mnt/rx1950-boot" \
     "${TARGET_DIR}/lib/firmware" \
+    "${TARGET_DIR}/usr/lib/rx1950" \
+    "${TARGET_DIR}/var/lib/alsa" \
     "${TARGET_DIR}/var/lib/opkg/lists"
 install -m 0644 "${EXTERNAL_DIR}/board/hp_rx1950/fstab" "${TARGET_DIR}/etc/fstab"
 install_acx_firmware
+
+printf '%s\n' "${SOURCE_DATE_EPOCH:-1767225600}" > "${TARGET_DIR}/usr/lib/rx1950/build-epoch"
+date --utc --date="@${SOURCE_DATE_EPOCH:-1767225600}" '+%Y-%m-%d %H:%M:%S' \
+    > "${TARGET_DIR}/usr/lib/rx1950/build-date-utc"
 
 # Buildroot's generic X init script starts before our hardware-specific
 # configuration and would race S48xserver for display :0.
@@ -100,14 +106,17 @@ HOME_URL="https://github.com/BlackF1re/rx1950-linux"
 EOF
 
 chmod 0755 \
+    "${TARGET_DIR}/etc/init.d/S02clock-sanity" \
     "${TARGET_DIR}/etc/init.d/S10kernel-modules" \
     "${TARGET_DIR}/etc/init.d/S20zram" \
+    "${TARGET_DIR}/etc/init.d/S30alsa" \
     "${TARGET_DIR}/etc/init.d/S35usb-gadget" \
     "${TARGET_DIR}/etc/init.d/S38time-sync" \
     "${TARGET_DIR}/etc/init.d/S40wlan" \
     "${TARGET_DIR}/etc/init.d/S48xserver" \
     "${TARGET_DIR}/etc/init.d/S50matchbox" \
     "${TARGET_DIR}/usr/share/udhcpc/rx1950-usb.script" \
+    "${TARGET_DIR}/usr/sbin/rx1950-usb-dhcp" \
     "${TARGET_DIR}/usr/sbin/rx1950-time-sync" \
     "${TARGET_DIR}/usr/sbin/rx1950-timezone" \
     "${TARGET_DIR}/usr/sbin/rx1950-wlan" \

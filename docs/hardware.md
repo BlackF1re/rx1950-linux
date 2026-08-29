@@ -16,26 +16,26 @@ while the inventory records physical existence and Linux implementation state.
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| CPU and memory | Samsung S3C2442, 300 MHz ARM920T/ARMv4T; 32 MiB SDRAM; debug boot overhead removed and 12 MiB `lzo-rle` zram tier configured | Experimental | The kernel reports 32 MiB physical / about 24.3 MiB userspace RAM on hardware. Re-test idle/peak GUI memory, swap effectiveness and sustained pressure without OOM or unusable latency. |
-| Internal flash | 64 MiB ROM / NAND, reserved for Windows Mobile | Protected | Verify no boot, install, update or recovery command writes it. |
+| CPU and memory | Samsung S3C2442, 300 MHz ARM920T/ARMv4T; 32 MiB SDRAM; debug boot overhead removed and 12 MiB `lzo-rle` zram tier configured | Experimental | Linux 6.2 sees all 32 MiB physical RAM and reports 25,344 KiB after the kernel's own code/data/reserved pages. The remaining gap is not missing RAM that can safely be handed to userspace. Re-test idle/peak GUI memory, swap effectiveness and sustained pressure. |
+| Internal flash | 64 MiB ROM / NAND, reserved for Windows Mobile; all four partitions are kernel read-only and `mtdblock` is disabled | Protected | Confirm the candidate emits no automatic NAND reads/ECC noise and that writes through every `/dev/mtd*` character device fail with `EROFS`. |
 | SD/MMC/SDIO | S3C24xx MCI; 1-bit/4-bit SD, MMC and SDIO slot | Experimental | Boot-tested on 0.1.13; re-verify cold boot, read/write/remount, card-detect and write-protect after the 0.1.14 regression rollback. |
-| LCD | 3.5-inch transflective 65k-colour QVGA TFT; S3C24xx framebuffer | Planned | Native 240x320 console and graphical session, orientation, long-running redraw. |
+| LCD | 3.5-inch transflective 65k-colour QVGA TFT; S3C24xx framebuffer and modular Xorg/fbdev | Experimental | Native 240x320 X/Matchbox is physically verified on 0.1.19; still verify long-running redraw and recovery after suspend. |
 | Backlight | PWM-controlled panel backlight | Experimental | Brightness control is verified on hardware; still verify blank/unblank and recovery after suspend. |
-| Touchscreen | SoC ADC/resistive single-touch controller | Experimental | Basic touch is verified; still verify calibration, edge accuracy, drag, wake input and persistent calibration. |
+| Touchscreen | SoC ADC/resistive single-touch controller; evdev affine transform derived from five physical measurements | Experimental | Axis direction is physically verified on 0.1.19. Verify the candidate's fitted edge reach, centre residual, drag, wake input and persistence; `xinput_calibrator` is included for a device-specific refinement. |
 | D-pad and action key | GPIO keys: up, down, left, right, enter | Experimental | Basic button input is verified; still verify every expected evdev code and graphical-session behaviour. |
 | Application keys | Power, record, calendar, contacts, mail and WLAN GPIO keys | Experimental | Basic button input is verified; still verify complete mapping, long press where applicable, and non-destructive power action. |
 | LEDs | Red, green and WLAN indicators on GPIO | Experimental | Manual on/off is verified on hardware; still verify triggers and safe power-state transitions. |
-| RTC | S3C24xx RTC | Planned | Set/read UTC, retain time over reset and restore system clock at boot. |
+| RTC | S3C24xx RTC; early sanity floor plus bounded NTP correction | Experimental | 0.1.19 booted with an invalid 2037 value. Verify that the candidate replaces implausible RTC values with its build timestamp before TLS, then retains a manually/NTP-set UTC value over reset. |
 | Hardware monitoring | S3C2442 ADC via separately registered `s3c-hwmon`; scaled battery voltage plus raw ADC channels 0-7 | Experimental | Run `sensors` and `rx1950-sensors`, verify stable readings alongside touchscreen/battery use, and compare battery voltage against a physical reading. |
 
 ## Connectivity and expansion
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| WLAN | Integrated IEEE 802.11b TI TNETW1100B/ACX100 on the external memory bus; pinned ACX mac80211 MEM driver, isolated RX1950 GPIO/MMIO glue, verified firmware and regulatory database | Experimental | Hardware reaches `wlan0`, but the previous IRQ path consumed `CMD_COMPLETE` before the synchronous command waiter and interface teardown raced an active hardware scan. Re-test the corrected exactly-once scan cancellation and command completion, then verify channels 1-13, open/WPA2 association, DHCP/DNS, sustained transfer and reconnect. |
+| WLAN | Integrated IEEE 802.11b TI TNETW1100B/ACX100; pinned ACX mac80211 MEM driver, verified firmware, and a signed regulatory database embedded for pre-rootfs cfg80211 startup | Experimental | Open and WPA2 association have worked on channel 7, but 0.1.19 lacked the early regulatory database and its forced boot scan could trigger ACX watchdog recovery. Verify clean boot without a forced scan, RU channels 1-13, explicit scan, both security modes, DHCP/DNS, sustained transfer and reconnect. |
 | Bluetooth | No integrated controller | Not applicable | SDIO Bluetooth cards are separate optional peripherals. |
 | Infrared | IrDA SIR/CIR port | Planned | `irda` stack discovery and bidirectional transfer with a known peer. |
-| USB device | S3C2410 UDC via 22-pin connector; CDC-NCM Ethernet gadget is enabled in the engineering image for native Windows 11/Linux host support | Experimental | Windows 11 enumerates the inbox `UsbNcm.sys` adapter; fixed `192.168.7.2` and USB SSH are verified. Re-test persistent host DHCP/ICS lease, Internet/DNS, disconnect and reconnect on the release image. |
+| USB device | S3C2410 UDC via 22-pin connector; CDC-NCM Ethernet gadget, fixed recovery address, and bounded optional host-DHCP retries | Experimental | Windows 11 enumeration, `192.168.7.2`, and SSH are verified. Verify that an absent host DHCP server produces no console spam, then test lease/route/DNS plus disconnect/reconnect. |
 | USB host | Connector/dock capability is not assumed | Research required | Identify electrical support before exposing a host-mode configuration. |
 | Serial | Dock connector RS-232 path | Research required | Identify cable and signal levels; console transfer test after confirmation. |
 | SDIO accessories | Slot supports SDIO electrically | Experimental | Each card model gets an individual driver, firmware, power and stability test. |
@@ -44,7 +44,7 @@ while the inventory records physical existence and Linux implementation state.
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| Audio codec | UDA1380 on I2C/I2S; the codec and IIS bind, while the tested image fails PCM creation because the SoC DMA provider is absent | Experimental | Re-test the separately registered DMA provider, then verify stereo playback to the 3.5 mm jack, speaker route, levels and underrun-free playback without disturbing SD/root. |
+| Audio codec | UDA1380 on I2C/I2S; playback/capture PCM and the separately registered S3C DMA provider are present; the codec reset leaves its master output muted | Experimental | The candidate explicitly initializes and unmutes named mixer controls. Verify speaker and 3.5 mm playback, volume range, underrun-free operation and SD/root stability. |
 | Microphone | Integrated mono microphone | Planned | Capture, playback and gain/noise verification. |
 | Speaker and headphone detect | GPIO-routed speaker power and headphone sense | Planned | Route switching and no audible pop across power/suspend transitions. |
 | Battery | Removable 1100 mAh Li-ion pack; S3C ADC reporting is active | Experimental | Voltage and charging state are observed; still verify cable transitions, capacity and low-battery behaviour against physical readings. |
@@ -59,10 +59,44 @@ while the inventory records physical existence and Linux implementation state.
 | FAT boot partition | Experimental | Windows Mobile can read shipped boot files and persistent HaRET diagnostics. |
 | Linux root partition | Experimental | 0.1.13 boots and grows ext4 successfully; re-verify the post-0.1.14 rollback image on physical media. |
 | Console and SSH | Experimental | Local framebuffer console and SSH over USB CDC-NCM are verified on the booting engineering image; release images intentionally use blank-root local login. Still verify reconnect and long-running stability. |
-| Package management | Planned | CI builds and validates the native ARMv4T/musl feed; on hardware verify `opkg update`, install/remove/reinstall, dependency handling, `/etc` conffile preservation, available-space failure and interrupted-transaction recovery. Cryptographic repository signing remains a separate release gate. |
-| Graphical session | Experimental | The tested image contained Matchbox but no executable X server because current Xorg KDrive no longer provides a framebuffer backend. The replacement modular Xorg/fbdev/evdev session requires on-device QVGA startup, stylus, physical navigation, idle RAM and clean-exit testing. |
+| Package management | Experimental | 0.1.19 includes `opkg 0.7.0`, but its configuration used an obsolete `lists_dir ext` directive. Verify update/install/remove/reinstall with the corrected `option lists_dir`, dependencies, conffiles, low-space and interrupted transactions. Repository signing remains a separate release gate. |
+| Graphical session | Experimental | Modular Xorg/fbdev/evdev and Matchbox start successfully at QVGA on 0.1.19. Verify candidate startup, calibrated stylus, physical navigation, idle RAM, clean exit, and the separately selected PDA shell before calling it supported. |
 
 ## Regression record
+
+### 0.1.19 on-device audit (2026-08-29)
+
+The following observations were collected over USB SSH from the same physical
+unit before preparing the next candidate. They are evidence about 0.1.19, not
+claims that the replacement image has passed:
+
+- Linux reports `MemTotal: 25344 kB`; the 12 MiB `lzo-rle` zram device is active
+  and had absorbed about 5.3 MiB without an OOM during the graphical session.
+- Xorg, fbdev, evdev and Matchbox run at 240x320. Touch axes are correct after
+  manual calibration, but the old transform does not reach the display edges.
+- ALSA card 0 exposes one UDA1380 duplex PCM with playback and capture. Opening
+  playback succeeds; mixer initialization/output unmute was missing.
+- cfg80211 loads its built-in signing certificate before the SD root is mounted,
+  then fails to find `regulatory.db`; the resulting domain remains `00`.
+- the forced WLAN boot scan reaches the ACX watchdog/recovery path. The radio
+  is therefore brought up without scanning in the replacement image; scanning
+  remains an explicit operation that must pass physical acceptance.
+- `usb0` and SSH at `192.168.7.2` are stable, while an always-running `udhcpc`
+  repeatedly broadcasts when the host provides no DHCP service.
+- both system time and the hardware RTC reported 2037-05-09. The replacement
+  image only corrects values outside a conservative build-time window.
+- `opkg 0.7.0` rejects the obsolete `lists_dir ext` syntax used by 0.1.19.
+- automatic `mtdblock` probing read all internal partitions and logged five
+  uncorrectable ECC errors. No write was attempted; the replacement removes
+  the block frontend and masks every partition read-only.
+
+Battery data remains unresolved: the driver reported `Full` while
+`voltage_now` was about 2.97 V and its current/charge fields were zero. Changing
+the ADC scale or charge tables without an external voltage measurement would
+turn an uncertain reading into a fabricated one, so physical calibration is a
+release gate rather than an unverified source change.
+
+### Historical storage regression
 
 `0.1.14-engineer` is known bad on physical RX1950 hardware. It reaches the
 kernel and panics during root mounting with:

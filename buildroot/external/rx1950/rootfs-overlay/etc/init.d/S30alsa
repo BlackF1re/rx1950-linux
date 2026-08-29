@@ -1,0 +1,20 @@
+#!/bin/sh
+# Apply a deterministic UDA1380 profile. Its reset cache leaves the master
+# output muted, while alsactl cannot serialize this legacy driver's malformed
+# TLV metadata. Named amixer controls avoid depending on numeric control IDs.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+case "${1:-}" in
+    start)
+        mkdir -p /var/lib/alsa
+        alsactl -U init 0 >/dev/null 2>&1 || true
+        amixer -q -c 0 sset 'Master Playback Switch' on || true
+        amixer -q -c 0 sset 'PCM Playback Switch' on || true
+        amixer -q -c 0 sset 'Master Playback Volume' 90% || true
+        amixer -q -c 0 sset 'PCM Playback Volume' 90% || true
+        amixer -q -c 0 sset 'ADC Capture Switch' on || true
+        amixer -q -c 0 sset 'Mic Capture Volume' 70% || true
+        ;;
+esac

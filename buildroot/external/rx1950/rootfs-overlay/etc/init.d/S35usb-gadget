@@ -6,12 +6,11 @@
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
 
-readonly DHCP_PID=/var/run/udhcpc-usb0.pid
-readonly DHCP_SCRIPT=/usr/share/udhcpc/rx1950-usb.script
+readonly DHCP_PID=/var/run/rx1950-usb-dhcp.pid
+readonly DHCP_HELPER=/usr/sbin/rx1950-usb-dhcp
 
 start_dhcp() {
-    command -v udhcpc >/dev/null 2>&1 || return 0
-    [ -x "$DHCP_SCRIPT" ] || return 0
+    [ -x "$DHCP_HELPER" ] || return 0
 
     if [ -s "$DHCP_PID" ]; then
         old_pid="$(cat "$DHCP_PID" 2>/dev/null || true)"
@@ -19,14 +18,8 @@ start_dhcp() {
     fi
     rm -f "$DHCP_PID"
 
-    # Keep one foreground udhcpc instance alive in the background of init.
-    # Without -n it retries indefinitely, so Windows ICS can be enabled before
-    # or after Linux has booted.  The lease script preserves 192.168.7.2 while
-    # adding the host-provided address, route and DNS information.
-    # Discovery is deliberately quiet: the fixed recovery address remains
-    # usable while a host DHCP service is absent, which is a normal state.
-    udhcpc -f -i usb0 -p "$DHCP_PID" -s "$DHCP_SCRIPT" \
-        -t 3 -T 2 -A 30 >/dev/null 2>&1 &
+    "$DHCP_HELPER" >/dev/null 2>&1 &
+    printf '%s\n' "$!" > "$DHCP_PID"
 }
 
 case "$1" in
@@ -52,5 +45,6 @@ case "$1" in
             [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
         fi
         rm -f "$DHCP_PID"
+        rm -f /var/run/udhcpc-usb0-client.pid
         ;;
 esac

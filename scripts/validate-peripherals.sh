@@ -37,6 +37,7 @@ source)
     audio_dma="${ROOT_DIR}/kernel/patches/0011-rx1950-register-audio-dma.patch"
     blue_patch="${ROOT_DIR}/kernel/patches/0011-rx1950-decouple-blue-led.patch"
     unsafe_mmc="${ROOT_DIR}/kernel/patches/0011-s3cmci-fix-gpiod-return-handling.patch"
+    nand_protect="${ROOT_DIR}/kernel/patches/0012-rx1950-protect-internal-nand.patch"
 
     for req in \
         CONFIG_S3C_ADC=y CONFIG_TOUCHSCREEN_S3C2410=y CONFIG_BATTERY_S3C_ADC=y \
@@ -50,6 +51,9 @@ source)
         require_line "$req" "$kcfg" "RX1950 kernel requirement missing: $req"
     done
     require_line '# CONFIG_MMC_S3C_DMA is not set' "$kcfg" 'RX1950 SD DMA must remain disabled'
+    require_line '# CONFIG_MTD_BLOCK is not set' "$kcfg" 'internal NAND block access must remain disabled'
+    require_line 'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"' "$kcfg" 'regulatory database is not embedded in the kernel'
+    require_line 'CONFIG_EXTRA_FIRMWARE_DIR="firmware"' "$kcfg" 'kernel firmware source directory changed'
 
     require_fragment 'depends on !ARCH_MULTIPLATFORM || ARCH_S3C24XX' "${ROOT_DIR}/kernel/patches/0006-s3c24xx-restore-adc-multiplatform.patch" 'S3C24xx ADC compatibility patch missing'
     require_fragment 'nr_irqs - S3C2410_IRQSUB(0)' "${ROOT_DIR}/kernel/patches/0007-s3c24xx-fix-static-irq-domain-size.patch" 'S3C24xx IRQ-domain fix missing'
@@ -63,6 +67,8 @@ source)
     if grep -Fq '&s3c2410_device_dma,' "$hwmon"; then die 'experimental DMA device must not enter the RX1950 boot path'; fi
     if grep -Fq '&s3c_device_hwmon,' "$hwmon"; then die 'optional hwmon must not enter the RX1950 boot-critical device array'; fi
     [[ ! -e "$unsafe_mmc" ]] || die 'unsafe S3CMCI GPIO patch must remain reverted'
+    [[ "$(grep -Fc '.mask_flags = MTD_WRITEABLE,' "$nand_protect")" -eq 2 ]] ||
+        die 'all writable RX1950 NAND data partitions must be forced read-only'
 
     [[ ! -e "$blue_patch" ]] || die 'obsolete Blue LED decoupling patch must remain removed'
     require_fragment '#define RX1950_WLAN_BASE          0x20000000' "$glue" 'ACX MMIO resource missing'
@@ -100,7 +106,10 @@ source)
         BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y \
         BR2_TARGET_TZ_INFO=y BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y \
         BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y \
-        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y; do
+        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y \
+        BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
+        BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
+        BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
@@ -114,14 +123,16 @@ source)
     require_fragment 'kernel-modules.tar' "$mods" 'module installer does not consume FAT module bundle'
     require_fragment 'echo 12M > /sys/block/zram0/disksize' "$zram" 'zram swap size is not bounded to 12 MiB'
     require_fragment 'echo lzo-rle > /sys/block/zram0/comp_algorithm' "$zram" 'zram does not use the ARM9-friendly lzo-rle compressor'
-    require_fragment 'udhcpc -f -i usb0' "$usb" 'persistent USB DHCP client is not started'
+    require_fragment 'ptmxmode=0666' "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/fstab" 'devpts does not permit PTY allocation'
+    require_fragment "sset 'Master Playback Switch' on" "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S30alsa" 'UDA1380 master output is not unmuted at boot'
+    require_fragment 'rx1950-usb-dhcp' "$usb" 'bounded USB DHCP supervisor is not started'
     require_fragment '192.168.7.2/24' "$usb" 'fixed USB recovery address lost'
     require_fragment 'ip route replace default' "$dhcp" 'USB default route handling missing'
     require_fragment 'rx1950-time-sync' "$time_sync" 'boot-time NTP synchronization is not started'
     require_fragment '/sys/devices/platform/s3c24xx-adc/s3c-hwmon/adc*_raw' "$sensors" 'sensor helper does not use verified Linux 6.2 ADC path'
     require_fragment 'modprobe acx-mac80211' "$wlan" 'WLAN helper does not load ACX driver first'
     require_fragment 'modprobe acx-mac80211 watchdog=1' "$wlan" 'ACX scan watchdog is not enabled'
-    require_fragment 'timeout 20 iw dev' "$wlan" 'WLAN readiness does not require a bounded health scan'
+    if grep -Fq 'timeout 20 iw dev' "$wlan"; then die 'boot-time WLAN scan must not trigger ACX recovery'; fi
     require_fragment 'iw reg set "$REGDOMAIN"' "$wlan" 'WLAN regulatory domain is not applied before scanning'
     require_fragment 'modprobe rx1950_acx' "$wlan" 'WLAN helper does not load RX1950 glue'
     require_fragment 'no-gpa11-power' "$wlan" 'WLAN helper lacks the explicit no-GPA11 diagnostic mode'
@@ -134,7 +145,7 @@ source)
     require_fragment 'rx1950-wlan start historical' "$wlan_init" 'boot WLAN path does not follow the historical RX1950 wiring'
     require_fragment 'Xorg :0 -config /etc/X11/xorg.conf' "$xserver" 'Xorg framebuffer server is not started'
     require_line 'dest root /' "$opkg" 'opkg root destination missing'
-    require_line 'lists_dir ext /var/lib/opkg/lists' "$opkg" 'opkg list directory missing'
+    require_line 'option lists_dir /var/lib/opkg/lists' "$opkg" 'opkg list directory missing'
     if grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "$opkg"; then die 'engineering opkg config must not use an unverified binary feed'; fi
     ;;
 
@@ -153,6 +164,9 @@ kernel)
         require_line "$req" "$cfg" "generated kernel dropped: $req"
     done
     require_line '# CONFIG_MMC_S3C_DMA is not set' "$cfg" 'generated kernel unexpectedly enabled S3C MCI DMA'
+    require_line '# CONFIG_MTD_BLOCK is not set' "$cfg" 'generated kernel exposes internal NAND as a block device'
+    require_line 'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"' "$cfg" 'generated kernel does not embed regulatory.db'
+    require_line 'CONFIG_EXTRA_FIRMWARE_DIR="firmware"' "$cfg" 'generated kernel firmware directory changed'
     test -s "${OUTPUT_DIR}/kernel-modules.tar" || die 'kernel WLAN module bundle missing'
     tar -tf "${OUTPUT_DIR}/kernel-modules.tar" | grep -q '/acx-mac80211\.ko$' || die 'ACX100 module missing from bundle'
     tar -tf "${OUTPUT_DIR}/kernel-modules.tar" | grep -q '/rx1950_acx\.ko$' || die 'RX1950 WLAN glue missing from bundle'
@@ -172,7 +186,10 @@ rootfs)
         BR2_TARGET_TZ_INFO=y BR2_PACKAGE_TZDATA=y \
         BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y \
         BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y \
-        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y; do
+        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y \
+        BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
+        BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
+        BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y; do
         require_line "$req" "$cfg" "generated rootfs dropped: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
@@ -188,15 +205,21 @@ image)
         /usr/bin/htop /usr/bin/evtest /usr/sbin/i2cdetect /usr/bin/sensors \
         /usr/bin/strace /usr/sbin/iw /usr/bin/curl /usr/bin/kmod /usr/sbin/wpa_supplicant \
         /usr/sbin/wpa_passphrase /usr/sbin/ntpd /usr/sbin/rx1950-time-sync \
+        /usr/sbin/rx1950-usb-dhcp /usr/bin/amixer /usr/bin/arecord \
+        /usr/sbin/alsactl /usr/bin/speaker-test /usr/bin/xinput \
+        /usr/bin/xinput_calibrator \
         /usr/sbin/rx1950-timezone /usr/sbin/rx1950-sensors /usr/sbin/rx1950-wlan \
         /usr/sbin/rx1950-wlan-firmware /usr/sbin/rx1950-blue /etc/default/dropbear \
         /etc/ssl/certs/ca-certificates.crt /etc/opkg/opkg.conf /sbin/udhcpc \
         /usr/share/udhcpc/rx1950-usb.script /etc/init.d/S05grow-root \
-        /etc/init.d/S10kernel-modules /etc/init.d/S35usb-gadget /etc/init.d/S38time-sync \
-        /etc/init.d/S20zram /etc/init.d/S40wlan /etc/init.d/S48xserver \
+        /etc/init.d/S02clock-sanity /etc/init.d/S10kernel-modules \
+        /etc/init.d/S20zram /etc/init.d/S30alsa /etc/init.d/S35usb-gadget \
+        /etc/init.d/S38time-sync /etc/init.d/S40wlan /etc/init.d/S48xserver \
         /usr/bin/Xorg /usr/lib/xorg/modules/drivers/fbdev_drv.so \
         /usr/lib/xorg/modules/input/evdev_drv.so /etc/X11/xorg.conf \
-        /lib/firmware/regulatory.db /lib/firmware/WLANGEN.BIN \
+        /lib/firmware/regulatory.db /lib/firmware/regulatory.db.p7s \
+        /usr/lib/rx1950/build-epoch /usr/lib/rx1950/build-date-utc \
+        /lib/firmware/WLANGEN.BIN \
         /lib/firmware/RADIO0d.BIN /lib/firmware/RADIO11.BIN; do
         rootfs_has "$rootfs" "$path" || die "sealed rootfs missing $path"
     done

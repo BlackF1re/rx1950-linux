@@ -26,7 +26,7 @@ validate_source() {
     require_line "arch all 1" "${OPKG_CONF}" "opkg all architecture missing"
     require_line "arch ${FEED_ARCH} 100" "${OPKG_CONF}" "rx1950 opkg ABI architecture missing"
     require_line "dest root /" "${OPKG_CONF}" "opkg root destination missing"
-    require_line "lists_dir ext /var/lib/opkg/lists" "${OPKG_CONF}" "opkg list directory missing"
+    require_line "option lists_dir /var/lib/opkg/lists" "${OPKG_CONF}" "opkg list directory missing"
 
     # opkg 0.7.0 enables HTTPS through libcurl only when libcurl is selected;
     # OpenSSL provides TLS and CA certificates provide server authentication.
@@ -88,7 +88,7 @@ validate_rootfs() {
 
     require_line "src/gz rx1950 ${FEED_URL}" "${feeds_extracted}" "sealed rootfs lost rx1950 package feed"
     require_line "arch ${FEED_ARCH} 100" "${opkg_extracted}" "sealed rootfs lost package ABI architecture"
-    require_line "lists_dir ext /var/lib/opkg/lists" "${opkg_extracted}" "sealed rootfs lost persistent opkg lists directory"
+    require_line "option lists_dir /var/lib/opkg/lists" "${opkg_extracted}" "sealed rootfs lost persistent opkg lists directory"
     if grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "${opkg_extracted}"; then
         die "sealed opkg.conf unexpectedly contains a repository definition"
     fi
