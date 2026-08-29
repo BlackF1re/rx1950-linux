@@ -18,9 +18,11 @@ source)
     busybox_fragment="${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
     grow="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S05grow-root"
     mods="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S10kernel-modules"
+    zram="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S20zram"
     usb="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S35usb-gadget"
     time_sync="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S38time-sync"
     wlan_init="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S40wlan"
+    xserver="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S48xserver"
     dhcp="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/share/udhcpc/rx1950-usb.script"
     sensors="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-sensors"
     wlan="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-wlan"
@@ -28,9 +30,11 @@ source)
     blue="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-blue"
     glue="${ROOT_DIR}/kernel/modules/rx1950-acx/rx1950_acx.c"
     acx_patch="${ROOT_DIR}/kernel/acx-patches/0001-mem-ack-irqs-before-deferred-work.patch"
+    acx_scan_patch="${ROOT_DIR}/kernel/acx-patches/0002-scan-cancel-before-interface-stop.patch"
     build="${ROOT_DIR}/scripts/build.sh"
     opkg="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/opkg/opkg.conf"
     hwmon="${ROOT_DIR}/kernel/patches/0010-rx1950-enable-hwmon.patch"
+    audio_dma="${ROOT_DIR}/kernel/patches/0011-rx1950-register-audio-dma.patch"
     blue_patch="${ROOT_DIR}/kernel/patches/0011-rx1950-decouple-blue-led.patch"
     unsafe_mmc="${ROOT_DIR}/kernel/patches/0011-s3cmci-fix-gpiod-return-handling.patch"
 
@@ -40,6 +44,8 @@ source)
         CONFIG_MMC_S3C_PIO=y CONFIG_I2C_CHARDEV=y CONFIG_HWMON=y \
         CONFIG_SENSORS_S3C=y CONFIG_SENSORS_S3C_RAW=y CONFIG_MODULES=y \
         CONFIG_FW_LOADER=y CONFIG_CFG80211=y CONFIG_MAC80211=y \
+        CONFIG_SWAP=y CONFIG_ZRAM=y CONFIG_CRYPTO_LZO=y \
+        CONFIG_ZRAM_DEF_COMP_LZORLE=y \
         CONFIG_LEDS_TRIGGERS=y CONFIG_LEDS_TRIGGER_NETDEV=y; do
         require_line "$req" "$kcfg" "RX1950 kernel requirement missing: $req"
     done
@@ -53,6 +59,7 @@ source)
     require_fragment 's3c_hwmon_set_platdata(&rx1950_hwmon_pdata);' "$hwmon" 'RX1950 hwmon platform data missing'
     require_fragment '.mult = 4235' "$hwmon" 'RX1950 voltage scaling missing'
     require_fragment 'WARN_ON(platform_device_register(&s3c_device_hwmon));' "$hwmon" 'hwmon is not isolated from boot-critical devices'
+    require_fragment 'WARN_ON(platform_device_register(&s3c2410_device_dma));' "$audio_dma" 'audio DMA provider is not registered'
     if grep -Fq '&s3c2410_device_dma,' "$hwmon"; then die 'experimental DMA device must not enter the RX1950 boot path'; fi
     if grep -Fq '&s3c_device_hwmon,' "$hwmon"; then die 'optional hwmon must not enter the RX1950 boot-critical device array'; fi
     [[ ! -e "$unsafe_mmc" ]] || die 'unsafe S3CMCI GPIO patch must remain reverted'
@@ -71,8 +78,10 @@ source)
     require_fragment 'gpio_direction_output(RX1950_WLAN_AUX1, 1)' "$glue" 'historical GPC8 WLAN state is not asserted'
     require_fragment 'gpio_direction_output(RX1950_WLAN_AUX2, 1)' "$glue" 'historical GPC9 WLAN state is not asserted'
 
-    require_fragment 'adev->irq_reason |= irqmasked;' "$acx_patch" 'ACX MEM IRQ causes are not latched in hard IRQ'
-    require_fragment 'IO_ACX_IRQ_ACK, irqmasked' "$acx_patch" 'ACX MEM IRQ causes are not ACKed before deferred work'
+    require_fragment 'adev->irq_reason |= deferred;' "$acx_patch" 'ACX deferred MEM IRQ causes are not latched in hard IRQ'
+    require_fragment 'irqmasked & ~HOST_INT_CMD_COMPLETE' "$acx_patch" 'ACX command completion can be consumed before its poller'
+    require_fragment '.cancel_hw_scan' "$acx_scan_patch" 'ACX scan cancellation callback is missing'
+    require_fragment 'test_and_clear_bit(ACX_FLAG_SCANNING' "$acx_scan_patch" 'ACX scan completion is not serialized'
     require_fragment "readonly ACX_COMMIT=\"${ACX_COMMIT}\"" "$build" 'ACX source commit is not pinned'
     require_fragment 'kernel/acx-patches/*.patch' "$build" 'local ACX patch set is not applied'
     require_fragment 'CONFIG_ACX_MAC80211_MEM=m' "$build" 'ACX memory transport not built'
@@ -84,27 +93,36 @@ source)
         BR2_PACKAGE_KMOD=y BR2_PACKAGE_KMOD_TOOLS=y BR2_PACKAGE_IW=y \
         BR2_PACKAGE_WPA_SUPPLICANT=y BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y \
         BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y BR2_PACKAGE_CA_CERTIFICATES=y \
+        BR2_PACKAGE_WIRELESS_REGDB=y \
         BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y BR2_PACKAGE_LIBCURL_CURL=y \
         BR2_PACKAGE_LIBCURL_OPENSSL=y BR2_PACKAGE_HTOP=y BR2_PACKAGE_EVTEST=y \
         BR2_PACKAGE_I2C_TOOLS=y BR2_PACKAGE_LM_SENSORS=y \
         BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y \
-        BR2_TARGET_TZ_INFO=y; do
+        BR2_TARGET_TZ_INFO=y BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y \
+        BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y \
+        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
     require_line 'CONFIG_NTPD=y' "$busybox_fragment" 'BusyBox NTP client is disabled'
+    require_line 'CONFIG_TIMEOUT=y' "$busybox_fragment" 'BusyBox timeout is required for bounded radio health checks'
     require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="64M"' "$rcfg" 'rootfs seed size is not 64 MiB'
     if grep -Fq 'BR2_PACKAGE_CURL=y' "$rcfg"; then die 'legacy Buildroot BR2_PACKAGE_CURL must not be used'; fi
 
     require_fragment '/proc/self/mountinfo' "$grow" 'root grower still relies on /dev/root alias'
     require_fragment '/sys/class/block/mmcblk0p2/dev' "$grow" 'root grower does not verify root device identity'
     require_fragment 'kernel-modules.tar' "$mods" 'module installer does not consume FAT module bundle'
+    require_fragment 'echo 12M > /sys/block/zram0/disksize' "$zram" 'zram swap size is not bounded to 12 MiB'
+    require_fragment 'echo lzo-rle > /sys/block/zram0/comp_algorithm' "$zram" 'zram does not use the ARM9-friendly lzo-rle compressor'
     require_fragment 'udhcpc -f -i usb0' "$usb" 'persistent USB DHCP client is not started'
     require_fragment '192.168.7.2/24' "$usb" 'fixed USB recovery address lost'
     require_fragment 'ip route replace default' "$dhcp" 'USB default route handling missing'
     require_fragment 'rx1950-time-sync' "$time_sync" 'boot-time NTP synchronization is not started'
     require_fragment '/sys/devices/platform/s3c24xx-adc/s3c-hwmon/adc*_raw' "$sensors" 'sensor helper does not use verified Linux 6.2 ADC path'
     require_fragment 'modprobe acx-mac80211' "$wlan" 'WLAN helper does not load ACX driver first'
+    require_fragment 'modprobe acx-mac80211 watchdog=1' "$wlan" 'ACX scan watchdog is not enabled'
+    require_fragment 'timeout 20 iw dev' "$wlan" 'WLAN readiness does not require a bounded health scan'
+    require_fragment 'iw reg set "$REGDOMAIN"' "$wlan" 'WLAN regulatory domain is not applied before scanning'
     require_fragment 'modprobe rx1950_acx' "$wlan" 'WLAN helper does not load RX1950 glue'
     require_fragment 'no-gpa11-power' "$wlan" 'WLAN helper lacks the explicit no-GPA11 diagnostic mode'
     require_fragment 'OPENBSD_URL=' "$fw" 'ACX firmware fetch helper missing'
@@ -114,6 +132,7 @@ source)
     require_fragment 'echo netdev > "$LED/trigger"' "$blue" 'Blue LED cannot use explicit WLAN trigger in diagnostic independent mode'
     require_fragment 'echo none > "$LED/trigger"' "$blue" 'Blue LED cannot return to manual mode in diagnostic independent mode'
     require_fragment 'rx1950-wlan start historical' "$wlan_init" 'boot WLAN path does not follow the historical RX1950 wiring'
+    require_fragment 'Xorg :0 -config /etc/X11/xorg.conf' "$xserver" 'Xorg framebuffer server is not started'
     require_line 'dest root /' "$opkg" 'opkg root destination missing'
     require_line 'lists_dir ext /var/lib/opkg/lists' "$opkg" 'opkg list directory missing'
     if grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "$opkg"; then die 'engineering opkg config must not use an unverified binary feed'; fi
@@ -125,6 +144,8 @@ kernel)
         CONFIG_S3C_ADC=y CONFIG_TOUCHSCREEN_S3C2410=y CONFIG_BATTERY_S3C_ADC=y \
         CONFIG_RTC_DRV_S3C=y CONFIG_SND_SOC_SAMSUNG_RX1950_UDA1380=y \
         CONFIG_DMADEVICES=y CONFIG_S3C24XX_DMAC=y CONFIG_MMC_S3C_PIO=y \
+        CONFIG_SWAP=y CONFIG_ZRAM=y CONFIG_CRYPTO_LZO=y \
+        CONFIG_ZRAM_DEF_COMP_LZORLE=y \
         CONFIG_I2C_CHARDEV=y CONFIG_HWMON=y CONFIG_S3C_DEV_HWMON=y \
         CONFIG_SENSORS_S3C=y CONFIG_SENSORS_S3C_RAW=y CONFIG_USB_G_NCM=y \
         CONFIG_MODULES=y CONFIG_FW_LOADER=y CONFIG_CFG80211=y CONFIG_MAC80211=y \
@@ -143,11 +164,15 @@ rootfs)
         BR2_PACKAGE_KMOD=y BR2_PACKAGE_KMOD_TOOLS=y BR2_PACKAGE_IW=y \
         BR2_PACKAGE_WPA_SUPPLICANT=y BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y \
         BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y BR2_PACKAGE_CA_CERTIFICATES=y \
+        BR2_PACKAGE_WIRELESS_REGDB=y \
         BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y BR2_PACKAGE_LIBCURL_CURL=y \
         BR2_PACKAGE_LIBCURL_OPENSSL=y BR2_PACKAGE_HTOP=y BR2_PACKAGE_EVTEST=y \
         BR2_PACKAGE_I2C_TOOLS=y BR2_PACKAGE_LM_SENSORS=y \
         BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y \
-        BR2_TARGET_TZ_INFO=y BR2_PACKAGE_TZDATA=y; do
+        BR2_TARGET_TZ_INFO=y BR2_PACKAGE_TZDATA=y \
+        BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y \
+        BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y \
+        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y; do
         require_line "$req" "$cfg" "generated rootfs dropped: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
@@ -168,8 +193,11 @@ image)
         /etc/ssl/certs/ca-certificates.crt /etc/opkg/opkg.conf /sbin/udhcpc \
         /usr/share/udhcpc/rx1950-usb.script /etc/init.d/S05grow-root \
         /etc/init.d/S10kernel-modules /etc/init.d/S35usb-gadget /etc/init.d/S38time-sync \
-        /etc/init.d/S40wlan /lib/firmware/WLANGEN.BIN /lib/firmware/RADIO0d.BIN \
-        /lib/firmware/RADIO11.BIN; do
+        /etc/init.d/S20zram /etc/init.d/S40wlan /etc/init.d/S48xserver \
+        /usr/bin/Xorg /usr/lib/xorg/modules/drivers/fbdev_drv.so \
+        /usr/lib/xorg/modules/input/evdev_drv.so /etc/X11/xorg.conf \
+        /lib/firmware/regulatory.db /lib/firmware/WLANGEN.BIN \
+        /lib/firmware/RADIO0d.BIN /lib/firmware/RADIO11.BIN; do
         rootfs_has "$rootfs" "$path" || die "sealed rootfs missing $path"
     done
     ;;

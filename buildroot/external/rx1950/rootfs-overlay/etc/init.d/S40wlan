@@ -15,10 +15,10 @@ case "${1:-start}" in
 			rx1950-wlan-firmware import >/dev/kmsg 2>&1 || true
 		fi
 		if [ -r /lib/firmware/WLANGEN.BIN ] && [ -r /lib/firmware/RADIO0d.BIN ]; then
-			rx1950-wlan start historical >/dev/kmsg 2>&1 || true
+			rx1950-wlan start historical >/dev/kmsg 2>&1
 		fi
 		;;
 	stop)
-		rx1950-wlan stop >/dev/kmsg 2>&1 || true
+		rx1950-wlan stop >/dev/kmsg 2>&1
 		;;
 esac

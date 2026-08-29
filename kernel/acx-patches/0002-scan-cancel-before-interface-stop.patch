@@ -1,0 +1,103 @@
+diff --git a/main.h b/main.h
+--- a/main.h
++++ b/main.h
+@@ -82,6 +82,8 @@ int acx_op_hw_scan(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+                    struct ieee80211_scan_request *req);
+ #endif
+ 
++void acx_op_cancel_hw_scan(struct ieee80211_hw *hw, struct ieee80211_vif *vif);
++
+ int acx_recover_hw(acx_device_t *adev);
+ 
+ #endif
+diff --git a/main.c b/main.c
+--- a/main.c
++++ b/main.c
+@@ -1169,6 +1169,32 @@ int acx_op_hw_scan(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+ 	return ret;
+ }
+ 
++void acx_op_cancel_hw_scan(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
++{
++	acx_device_t *adev = hw2adev(hw);
++#if CONFIG_ACX_MAC80211_VERSION >= KERNEL_VERSION(4, 8, 0)
++	struct cfg80211_scan_info info = {
++		.aborted = true,
++	};
++#endif
++
++	acx_sem_lock(adev);
++	if (!test_and_clear_bit(ACX_FLAG_SCANNING, &adev->flags)) {
++		acx_sem_unlock(adev);
++		return;
++	}
++
++	/* Stop firmware activity before releasing mac80211's scan request. */
++	acx_issue_cmd(adev, ACX1xx_CMD_STOP_SCAN, NULL, 0);
++	acx_sem_unlock(adev);
++
++#if CONFIG_ACX_MAC80211_VERSION >= KERNEL_VERSION(4, 8, 0)
++	ieee80211_scan_completed(adev->hw, &info);
++#else
++	ieee80211_scan_completed(adev->hw, true);
++#endif
++}
++
+ /*
+  * BOM Helpers
+  * ==================================================
+diff --git a/mem.c b/mem.c
+--- a/mem.c
++++ b/mem.c
+@@ -1835,5 +1835,6 @@ static const struct ieee80211_ops acxmem_hw_ops = {
+ #if CONFIG_ACX_MAC80211_VERSION >= KERNEL_VERSION(3, 1, 0)
+ 	.hw_scan		= acx_op_hw_scan,
++	.cancel_hw_scan		= acx_op_cancel_hw_scan,
+ #endif
+ 
+ #if CONFIG_ACX_MAC80211_VERSION < KERNEL_VERSION(2, 6, 34)
+diff --git a/merge.c b/merge.c
+--- a/merge.c
++++ b/merge.c
+@@ -2781,13 +2781,12 @@ void acx_irq_work(struct work_struct *work)
+ 		/* HOST_INT_SCAN_COMPLETE */
+ 		if (irqmasked & HOST_INT_SCAN_COMPLETE) {
+-			if (test_bit(ACX_FLAG_SCANNING, &adev->flags)) {
++			if (test_and_clear_bit(ACX_FLAG_SCANNING, &adev->flags)) {
+ #if CONFIG_ACX_MAC80211_VERSION >= KERNEL_VERSION(4, 8, 0)
+ 				ieee80211_scan_completed(adev->hw, &info);
+ #else
+ 				ieee80211_scan_completed(adev->hw, false);
+ #endif
+ 				log(L_INIT, "scan completed\n");
+-				clear_bit(ACX_FLAG_SCANNING, &adev->flags);
+ 			}
+ 		}
+ 
+@@ -3155,13 +3155,13 @@ void acx_stop(acx_device_t *adev)
+ #endif
+ 
+-	if (test_bit(ACX_FLAG_SCANNING, &adev->flags)) {
++	if (test_and_clear_bit(ACX_FLAG_SCANNING, &adev->flags)) {
++		/* Quiesce firmware before handing the request back to mac80211. */
++		acx_issue_cmd(adev, ACX1xx_CMD_STOP_SCAN, NULL, 0);
+ #if CONFIG_ACX_MAC80211_VERSION >= KERNEL_VERSION(4, 8, 0)
+ 		ieee80211_scan_completed(adev->hw, &info);
+ #else
+ 		ieee80211_scan_completed(adev->hw, true);
+ #endif
+-		acx_issue_cmd(adev, ACX1xx_CMD_STOP_SCAN, NULL, 0);
+-		clear_bit(ACX_FLAG_SCANNING, &adev->flags);
+ 	}
+ 
+ 	acx_stop_queue(adev->hw, "on ifdown");
+diff --git a/pci.c b/pci.c
+--- a/pci.c
++++ b/pci.c
+@@ -685,5 +685,6 @@ static const struct ieee80211_ops acxpci_hw_ops = {
+ #if CONFIG_ACX_MAC80211_VERSION >= KERNEL_VERSION(3, 1, 0)
+ 	.hw_scan		= acx_op_hw_scan,
++	.cancel_hw_scan		= acx_op_cancel_hw_scan,
+ #endif
+ 
+ #if CONFIG_ACX_MAC80211_VERSION < KERNEL_VERSION(2, 6, 34)

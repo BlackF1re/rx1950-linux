@@ -120,10 +120,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v5-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
+          key: rx1950-buildroot-output-v6-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/configs/busybox.fragment', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
           restore-keys: |
-            rx1950-buildroot-output-v5-${{ runner.os }}-2025.02.2-
-            rx1950-buildroot-output-v4-${{ runner.os }}-2025.02.2-
+            rx1950-buildroot-output-v6-${{ runner.os }}-2025.02.2-
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs
       - name: Build root filesystem
@@ -140,7 +139,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v5-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
+          key: rx1950-buildroot-output-v6-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/configs/busybox.fragment', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
       - uses: actions/upload-artifact@v4
         with:
           name: rootfs-${{ needs.plan.outputs.id }}
@@ -167,7 +166,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v5-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
+          key: rx1950-buildroot-output-v6-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/configs/busybox.fragment', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
       - name: Install package-feed build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs python3
       - name: Build package feed

@@ -117,8 +117,8 @@ validate_console_backlight_configs() {
         die "rootfs lost the local getty"
     grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${buildroot_config}" ||
         die "rootfs getty is not attached to framebuffer VT tty1"
-    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_DEVTMPFS=y' "${buildroot_config}" ||
-        die "rootfs device policy no longer expects kernel devtmpfs"
+    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y' "${buildroot_config}" ||
+        die "rootfs device policy no longer provides udev input discovery"
     ! grep -q 'BR2_TARGET_GENERIC_GETTY_PORT="ttySAC0"' "${buildroot_config}" ||
         die "rootfs still respawns getty on unavailable ttySAC0"
 }
@@ -139,7 +139,7 @@ case "${1:-source}" in
     grep -qx 'BR2_TOOLCHAIN_BUILDROOT_MUSL=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_TARGET_GENERIC_GETTY=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
-    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_DEVTMPFS=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     ! grep -q 'ttySAC0' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'CONFIG_ARCH_MULTI_V4T=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_ARCH_MULTI_V7 is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
@@ -158,11 +158,10 @@ case "${1:-source}" in
     grep -qx 'CONFIG_BACKLIGHT_CLASS_DEVICE=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_BACKLIGHT_PWM=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_PWM_SAMSUNG=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
-    grep -qx 'CONFIG_LOG_BUF_SHIFT=17' "${ROOT_DIR}/kernel/rx1950_defconfig"
-    grep -qx 'CONFIG_DEBUG_KERNEL=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
-    grep -qx 'CONFIG_DEBUG_DRIVER=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_LOG_BUF_SHIFT=14' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx '# CONFIG_DEBUG_KERNEL is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
-    grep -Fqx 'CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -Fqx 'CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -Fq 'clk_uart_baud3' "${ROOT_DIR}/kernel/patches/0002-s3c244x-restore-fclk-n-and-trace-uart.patch"
     grep -Fq 'platform_get_irq_optional(platdev, 1)' "${ROOT_DIR}/kernel/patches/0002-s3c244x-restore-fclk-n-and-trace-uart.patch"
     grep -Fq 'deferring RX/TX controller activation until IRQ startup' "${ROOT_DIR}/kernel/patches/0003-s3c24xx-defer-uart-activation.patch"
@@ -175,7 +174,7 @@ case "${1:-source}" in
     grep -qx 'set KERNEL_OFFSET 0x1000000' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set FBDURINGBOOT 0' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     grep -qx 'set KERNELCRC 1' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
-    grep -Fqx 'set CMDLINE "root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
+    grep -Fqx 'set CMDLINE "root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"' "${ROOT_DIR}/board/hp_rx1950/startup.txt"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S10boot-probe"
     test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"
     grep -Fq 'dmesg.log' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-boot-probe"

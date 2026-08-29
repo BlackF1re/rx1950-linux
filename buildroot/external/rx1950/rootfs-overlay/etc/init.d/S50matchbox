@@ -1,11 +1,8 @@
 #!/bin/sh
-# Start the intentionally small local PDA session after the TinyX server.
+# Start the intentionally small local PDA session after the Xorg fbdev server.
 
 case "$1" in
     start)
-        # Keep the first physical boot observable.  Enable the graphical
-        # session only after the framebuffer probe has been confirmed.
-        [ -e /etc/rx1950/enable-matchbox ] || exit 0
         export DISPLAY=:0.0
         attempts=0
         while [ ! -S /tmp/.X11-unix/X0 ] && [ "$attempts" -lt 10 ]; do

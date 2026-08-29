@@ -81,6 +81,10 @@ install -d -m 0755 \
 install -m 0644 "${EXTERNAL_DIR}/board/hp_rx1950/fstab" "${TARGET_DIR}/etc/fstab"
 install_acx_firmware
 
+# Buildroot's generic X init script starts before our hardware-specific
+# configuration and would race S48xserver for display :0.
+rm -f "${TARGET_DIR}/etc/init.d/S40xorg"
+
 # Buildroot normally derives /etc/os-release VERSION from the surrounding Git
 # checkout. A pull-request synthetic merge and the equivalent squash commit have
 # different commit IDs despite an identical source tree, which made otherwise
@@ -97,9 +101,12 @@ EOF
 
 chmod 0755 \
     "${TARGET_DIR}/etc/init.d/S10kernel-modules" \
+    "${TARGET_DIR}/etc/init.d/S20zram" \
     "${TARGET_DIR}/etc/init.d/S35usb-gadget" \
     "${TARGET_DIR}/etc/init.d/S38time-sync" \
     "${TARGET_DIR}/etc/init.d/S40wlan" \
+    "${TARGET_DIR}/etc/init.d/S48xserver" \
+    "${TARGET_DIR}/etc/init.d/S50matchbox" \
     "${TARGET_DIR}/usr/share/udhcpc/rx1950-usb.script" \
     "${TARGET_DIR}/usr/sbin/rx1950-time-sync" \
     "${TARGET_DIR}/usr/sbin/rx1950-timezone" \

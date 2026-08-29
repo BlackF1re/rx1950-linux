@@ -1,8 +1,7 @@
 CONFIG_CC_OPTIMIZE_FOR_SIZE=y
 CONFIG_SYSVIPC=y
-CONFIG_LOG_BUF_SHIFT=17
-CONFIG_DEBUG_KERNEL=y
-CONFIG_DEBUG_DRIVER=y
+CONFIG_LOG_BUF_SHIFT=14
+# CONFIG_DEBUG_KERNEL is not set
 
 # Samsung S3C2442 / iPAQ rx1950 platform
 CONFIG_ARCH_MULTI_V4T=y
@@ -12,7 +11,7 @@ CONFIG_ARCH_S3C24XX=y
 CONFIG_S3C_ADC=y
 CONFIG_CPU_S3C2442=y
 CONFIG_MACH_RX1950=y
-CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"
+CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"
 CONFIG_FPE_NWFPE=y
 CONFIG_FPE_NWFPE_XP=y
 CONFIG_HZ_100=y
@@ -20,6 +19,11 @@ CONFIG_SUSPEND=y
 CONFIG_MODULES=y
 CONFIG_MODULE_UNLOAD=y
 CONFIG_FW_LOADER=y
+CONFIG_SWAP=y
+CONFIG_ZRAM=y
+CONFIG_CRYPTO=y
+CONFIG_CRYPTO_LZO=y
+CONFIG_ZRAM_DEF_COMP_LZORLE=y
 
 # Buildroot/musl uses the ARM EABI syscall convention. Keep the kernel on
 # the same ABI; OABI compatibility is unnecessary for the RX1950 rootfs.

@@ -16,7 +16,7 @@ while the inventory records physical existence and Linux implementation state.
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| CPU and memory | Samsung S3C2442, 300 MHz ARM920T/ARMv4T; 32 MiB SDRAM | Planned | Kernel boots, reports memory, runs a sustained userspace stress test. |
+| CPU and memory | Samsung S3C2442, 300 MHz ARM920T/ARMv4T; 32 MiB SDRAM; debug boot overhead removed and 12 MiB `lzo-rle` zram tier configured | Experimental | The kernel reports 32 MiB physical / about 24.3 MiB userspace RAM on hardware. Re-test idle/peak GUI memory, swap effectiveness and sustained pressure without OOM or unusable latency. |
 | Internal flash | 64 MiB ROM / NAND, reserved for Windows Mobile | Protected | Verify no boot, install, update or recovery command writes it. |
 | SD/MMC/SDIO | S3C24xx MCI; 1-bit/4-bit SD, MMC and SDIO slot | Experimental | Boot-tested on 0.1.13; re-verify cold boot, read/write/remount, card-detect and write-protect after the 0.1.14 regression rollback. |
 | LCD | 3.5-inch transflective 65k-colour QVGA TFT; S3C24xx framebuffer | Planned | Native 240x320 console and graphical session, orientation, long-running redraw. |
@@ -32,7 +32,7 @@ while the inventory records physical existence and Linux implementation state.
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| WLAN | Integrated IEEE 802.11b TI TNETW1100B/ACX100 on the external memory bus; pinned ACX mac80211 MEM driver, isolated RX1950 GPIO/MMIO glue, bundled verified firmware, and a local immediate-ACK MEM IRQ fix derived from physical traces | Experimental | The device now identifies TNETW1100B/MAX2820, loads/validates firmware, creates `wlan0` and delivers EINT16/RX IRQs. Re-test the patched module on hardware, then verify scan, WPA/WPA2 association, DHCP, DNS, sustained TCP transfer and reconnect. |
+| WLAN | Integrated IEEE 802.11b TI TNETW1100B/ACX100 on the external memory bus; pinned ACX mac80211 MEM driver, isolated RX1950 GPIO/MMIO glue, verified firmware and regulatory database | Experimental | Hardware reaches `wlan0`, but the previous IRQ path consumed `CMD_COMPLETE` before the synchronous command waiter and interface teardown raced an active hardware scan. Re-test the corrected exactly-once scan cancellation and command completion, then verify channels 1-13, open/WPA2 association, DHCP/DNS, sustained transfer and reconnect. |
 | Bluetooth | No integrated controller | Not applicable | SDIO Bluetooth cards are separate optional peripherals. |
 | Infrared | IrDA SIR/CIR port | Planned | `irda` stack discovery and bidirectional transfer with a known peer. |
 | USB device | S3C2410 UDC via 22-pin connector; CDC-NCM Ethernet gadget is enabled in the engineering image for native Windows 11/Linux host support | Experimental | Windows 11 enumerates the inbox `UsbNcm.sys` adapter; fixed `192.168.7.2` and USB SSH are verified. Re-test persistent host DHCP/ICS lease, Internet/DNS, disconnect and reconnect on the release image. |
@@ -44,7 +44,7 @@ while the inventory records physical existence and Linux implementation state.
 
 | Subsystem | Known implementation | Status | Required release test |
 | --- | --- | --- | --- |
-| Audio codec | UDA1380 on I2C/I2S; PCM currently blocked by missing safe S3C2442 DMA activation | Planned | Design DMA activation that cannot affect the SD boot path, then verify stereo playback to 3.5 mm jack, speaker route, levels and underrun-free playback. |
+| Audio codec | UDA1380 on I2C/I2S; the codec and IIS bind, while the tested image fails PCM creation because the SoC DMA provider is absent | Experimental | Re-test the separately registered DMA provider, then verify stereo playback to the 3.5 mm jack, speaker route, levels and underrun-free playback without disturbing SD/root. |
 | Microphone | Integrated mono microphone | Planned | Capture, playback and gain/noise verification. |
 | Speaker and headphone detect | GPIO-routed speaker power and headphone sense | Planned | Route switching and no audible pop across power/suspend transitions. |
 | Battery | Removable 1100 mAh Li-ion pack; S3C ADC reporting is active | Experimental | Voltage and charging state are observed; still verify cable transitions, capacity and low-battery behaviour against physical readings. |
@@ -60,7 +60,7 @@ while the inventory records physical existence and Linux implementation state.
 | Linux root partition | Experimental | 0.1.13 boots and grows ext4 successfully; re-verify the post-0.1.14 rollback image on physical media. |
 | Console and SSH | Experimental | Local framebuffer console and SSH over USB CDC-NCM are verified on the booting engineering image; release images intentionally use blank-root local login. Still verify reconnect and long-running stability. |
 | Package management | Planned | CI builds and validates the native ARMv4T/musl feed; on hardware verify `opkg update`, install/remove/reinstall, dependency handling, `/etc` conffile preservation, available-space failure and interrupted-transaction recovery. Cryptographic repository signing remains a separate release gate. |
-| Graphical session | Experimental | The image includes the Matchbox session (TinyX, launcher, panel and on-screen keyboard); verify QVGA startup, stylus, physical navigation, idle RAM and clean exit on the device. |
+| Graphical session | Experimental | The tested image contained Matchbox but no executable X server because current Xorg KDrive no longer provides a framebuffer backend. The replacement modular Xorg/fbdev/evdev session requires on-device QVGA startup, stylus, physical navigation, idle RAM and clean-exit testing. |
 
 ## Regression record
 
@@ -92,9 +92,11 @@ board-level path before the driver fix was written:
 - the old merged PCI/MEM top-half then masked all ACX interrupts and deferred
   processing without ACKing the MEM cause. Synchronous command polling started
   before the worker ran, remained stuck on `irq bits:0x01`, and timed out;
-- the local `kernel/acx-patches/0001-mem-ack-irqs-before-deferred-work.patch`
-  latches and ACKs MEM causes in hard IRQ while keeping RX descriptor work
-  deferred. Physical scan/association acceptance is still required after build.
+- the first immediate-ACK fix also consumed `HOST_INT_CMD_COMPLETE` in hard IRQ,
+  racing the driver's synchronous command poller. The corrected patch leaves
+  command completion to that poller while deferring data IRQs; a second patch
+  cancels a firmware scan before interface teardown and reports completion
+  exactly once. Physical scan/association acceptance remains required.
 
 This evidence rules out the earlier broad hypotheses of missing WLAN power,
 wrong MMIO address, missing firmware and a dead EINT16 line. It does not by

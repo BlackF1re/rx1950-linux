@@ -46,9 +46,17 @@ for path in \
     /etc/opkg/opkg.conf \
     /etc/opkg/distfeeds.conf \
     /etc/init.d/S10kernel-modules \
+    /etc/init.d/S20zram \
     /etc/init.d/S35usb-gadget \
     /etc/init.d/S38time-sync \
     /etc/init.d/S40wlan \
+    /etc/init.d/S48xserver \
+    /etc/init.d/S50matchbox \
+    /usr/bin/Xorg \
+    /usr/lib/xorg/modules/drivers/fbdev_drv.so \
+    /usr/lib/xorg/modules/input/evdev_drv.so \
+    /etc/X11/xorg.conf \
+    /lib/firmware/regulatory.db \
     /lib/firmware/WLANGEN.BIN \
     /lib/firmware/RADIO0d.BIN \
     /lib/firmware/RADIO11.BIN; do
@@ -78,4 +86,9 @@ extract /etc/init.d/S38time-sync "${tmp}/S38time-sync"
 grep -Fq 'rx1950-time-sync' "${tmp}/S38time-sync" ||
     die 'boot-time NTP synchronization is not enabled'
 
-printf 'rootfs WLAN/USB/HTTPS/time/login payload: OK\n'
+extract /etc/init.d/S20zram "${tmp}/S20zram"
+grep -Fq 'lzo-rle' "${tmp}/S20zram" || die 'zram compressor is not lzo-rle'
+extract /etc/init.d/S48xserver "${tmp}/S48xserver"
+grep -Fq 'Xorg :0' "${tmp}/S48xserver" || die 'Xorg is not started at boot'
+
+printf 'rootfs WLAN/USB/GUI/zram/regulatory payload: OK\n'

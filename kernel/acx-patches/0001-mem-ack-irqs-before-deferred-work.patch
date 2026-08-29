@@ -1,7 +1,7 @@
 diff --git a/merge.c b/merge.c
 --- a/merge.c
 +++ b/merge.c
-@@ -92,8 +92,20 @@ irqreturn_t acx_interrupt(int irq, void *dev_id)
+@@ -92,8 +92,28 @@ irqreturn_t acx_interrupt(int irq, void *dev_id)
 -	/* Mask all irqs, until we handle them. We will unmask them
 -	 * later in the tasklet. */
 -	write_reg16(adev, IO_ACX_IRQ_MASK, HOST_INT_MASK_ALL);
@@ -15,8 +15,16 @@ diff --git a/merge.c b/merge.c
 +	 * descriptor/info processing. PCI keeps the historical mask/defer path.
 +	 */
 +	if (IS_MEM(adev)) {
-+		adev->irq_reason |= irqmasked;
-+		write_reg16(adev, IO_ACX_IRQ_ACK, irqmasked);
++		u16 deferred = irqmasked & ~HOST_INT_CMD_COMPLETE;
++
++		/*
++		 * _acx_issue_cmd_timeo_debug() polls CMD_COMPLETE while holding
++		 * the MEM spinlock with local IRQs disabled.  Never consume that
++		 * bit here: doing so makes the poller observe zero and wedges the
++		 * firmware command engine during interface start/restart.
++		 */
++		adev->irq_reason |= deferred;
++		write_reg16(adev, IO_ACX_IRQ_ACK, deferred);
 +		write_flush(adev);
 +		acx_schedule_task(adev, 0);
 +	} else {
@@ -27,7 +35,7 @@ diff --git a/merge.c b/merge.c
  
  	spin_unlock_irqrestore(&adev->spinlock, flags);
  
-@@ -2802,5 +2814,20 @@ void acx_irq_work(struct work_struct *work)
+@@ -2802,5 +2822,21 @@ void acx_irq_work(struct work_struct *work)
  	irqreason = read_reg16(adev, IO_ACX_IRQ_REASON);
 +	if (IS_MEM(adev)) {
 +		/*
@@ -42,8 +50,9 @@ diff --git a/merge.c b/merge.c
  	irqmasked = irqreason & ~adev->irq_mask;
  	log(L_IRQ, "irqstatus=%04X, irqmasked==%04X\n", irqreason, irqmasked);
  
-+	if (IS_MEM(adev) && irqmasked) {
-+		write_reg16(adev, IO_ACX_IRQ_ACK, irqmasked);
++	if (IS_MEM(adev) && (irqmasked & ~HOST_INT_CMD_COMPLETE)) {
++		write_reg16(adev, IO_ACX_IRQ_ACK,
++			    irqmasked & ~HOST_INT_CMD_COMPLETE);
 +		write_flush(adev);
 +	}
 +

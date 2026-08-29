@@ -27,13 +27,16 @@ Policy since 0.1.15:
 - keep the upstream S3CMCI/root path unchanged;
 - keep optional engineering devices outside the boot-critical board array;
 - load WLAN only as kernel-matched modules after root is available;
-- leave S3C2442 DMA compiled but do not activate the unsafe early RX1950 DMA path until audio can be restored without risking storage.
+- register the S3C2410/2442 DMA provider separately before the audio devices,
+  never as a member of the rollback-prone boot-critical device array.
 
 USB CDC-NCM/SSH remains the recovery channel after userspace starts.
 
 ## Userspace and packages
 
-The base is Buildroot/BusyBox with Dropbear, hardware diagnostics, WLAN tools and a small Matchbox/TinyX session. The system ABI is ARM920T/ARMv4T, EABI, soft-float, musl.
+The base is Buildroot/BusyBox with Dropbear, hardware diagnostics, WLAN tools and
+a small Matchbox session on the modular Xorg fbdev server. The system ABI is
+ARM920T/ARMv4T, EABI, soft-float, musl.
 
 `opkg` uses only the project feed (`rx1950_armv4t_musl_v1`). Packages are built with the same Buildroot toolchain as the image. CI rejects packages that overwrite sealed base files, collide with another package, have unresolved dependencies or contain the wrong ARM ABI. `/etc` package files are emitted as conffiles.
 

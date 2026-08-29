@@ -23,8 +23,10 @@ start_dhcp() {
     # Without -n it retries indefinitely, so Windows ICS can be enabled before
     # or after Linux has booted.  The lease script preserves 192.168.7.2 while
     # adding the host-provided address, route and DNS information.
+    # Discovery is deliberately quiet: the fixed recovery address remains
+    # usable while a host DHCP service is absent, which is a normal state.
     udhcpc -f -i usb0 -p "$DHCP_PID" -s "$DHCP_SCRIPT" \
-        -t 3 -T 2 -A 5 >/dev/kmsg 2>&1 &
+        -t 3 -T 2 -A 30 >/dev/null 2>&1 &
 }
 
 case "$1" in

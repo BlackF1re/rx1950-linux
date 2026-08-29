@@ -113,9 +113,15 @@ prepare_acx() {
         fi
     done
 
-    grep -Fq 'adev->irq_reason |= irqmasked;' "${source}/merge.c" ||
+    grep -Fq 'adev->irq_reason |= deferred;' "${source}/merge.c" ||
         die "ACX MEM interrupt latch patch is missing"
-    grep -Fq 'write_reg16(adev, IO_ACX_IRQ_ACK, irqmasked);' "${source}/merge.c" ||
+    grep -Fq 'irqmasked & ~HOST_INT_CMD_COMPLETE' "${source}/merge.c" ||
+        die "ACX command completion IRQ can be consumed before the poller"
+    grep -Fq '.cancel_hw_scan' "${source}/mem.c" ||
+        die "ACX scan cancellation callback is missing"
+    grep -Fq 'test_and_clear_bit(ACX_FLAG_SCANNING' "${source}/merge.c" ||
+        die "ACX scan completion is not serialized"
+    grep -Fq 'write_reg16(adev, IO_ACX_IRQ_ACK, deferred);' "${source}/merge.c" ||
         die "ACX MEM interrupt ACK patch is missing"
     printf '%s\n' "${source}"
 }
@@ -192,10 +198,14 @@ validate_kernel_config() {
         'CONFIG_LEDS_TRIGGER_NETDEV=y'
         'CONFIG_DMADEVICES=y'
         'CONFIG_S3C24XX_DMAC=y'
+        'CONFIG_SWAP=y'
+        'CONFIG_ZRAM=y'
+        'CONFIG_CRYPTO_LZO=y'
+        'CONFIG_ZRAM_DEF_COMP_LZORLE=y'
         'CONFIG_MMC_S3C=y'
         'CONFIG_FB_S3C2410=y'
         '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set'
-        'CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"'
+        'CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"'
         'CONFIG_CMDLINE_FORCE=y'
     )
 
@@ -289,7 +299,7 @@ build_kernel() {
     mkdir -p "${out}"
     cp "${ROOT_DIR}/kernel/rx1950_defconfig" "${out}/.config"
     sed -i \
-        -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=8 ignore_loglevel initcall_debug consoleblank=0 printk.time=1"|' \
+        -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"|' \
         -e '/^CONFIG_CMDLINE_FORCE=/d' \
         "${out}/.config"
     printf '%s\n' 'CONFIG_CMDLINE_FORCE=y' >> "${out}/.config"

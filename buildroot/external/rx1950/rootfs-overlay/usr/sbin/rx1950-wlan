@@ -13,6 +13,17 @@ export PATH
 PIDFILE=/var/run/wpa_supplicant-rx1950.pid
 CONF=/etc/wpa_supplicant.conf
 BLUE_TRIGGER=/sys/class/leds/Blue/trigger
+LOCKDIR=/run/rx1950-wlan.lock
+REGDOMAIN=RU
+[ ! -r /etc/default/rx1950-wlan ] || . /etc/default/rx1950-wlan
+
+acquire_lock() {
+	mkdir "$LOCKDIR" 2>/dev/null || {
+		printf '%s\n' 'another rx1950-wlan operation is in progress' >&2
+		return 1
+	}
+	trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT HUP INT TERM
+}
 
 iface() {
 	for n in /sys/class/net/wlan*; do
@@ -82,7 +93,7 @@ start_radio() {
 			return 1
 		fi
 	else
-		modprobe acx-mac80211 || return 1
+		modprobe acx-mac80211 watchdog=1 || return 1
 		case "$requested" in
 			Y)
 				# Historical RX1950 sequence: GPA11 is the WLAN power/Blue line.
@@ -123,20 +134,40 @@ start_radio() {
 		printf '%s\n' 'Inspect: dmesg | grep -iE "rx1950-acx|acx|firmware|wlan"' >&2
 		return 1
 	}
+	case "$REGDOMAIN" in
+		[A-Z][A-Z]) iw reg set "$REGDOMAIN" || return 1 ;;
+		*) printf '%s\n' "invalid REGDOMAIN: $REGDOMAIN" >&2; return 1 ;;
+	esac
 	ip link set "$ifname" up
+	# A wlan netdev can exist while the ACX command engine is already wedged.
+	# Require one complete bounded scan before claiming that the radio is ready.
+	if ! timeout 20 iw dev "$ifname" scan >/run/rx1950-wlan-scan.log 2>&1; then
+		printf '%s\n' 'ACX radio health scan failed; interface is not ready.' >&2
+		return 1
+	fi
 	printf '%s\n' "WLAN ready: $ifname"
 }
 
 stop_radio() {
 	if [ -s "$PIDFILE" ]; then
 		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+		ifname="$(iface 2>/dev/null || true)"
+		[ -z "$ifname" ] || wpa_cli -i "$ifname" terminate >/dev/null 2>&1 || true
+		attempt=0
+		while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$attempt" -lt 5 ]; do
+			sleep 1
+			attempt=$((attempt + 1))
+		done
 		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
 		rm -f "$PIDFILE"
 	fi
 	ifname="$(iface 2>/dev/null || true)"
-	[ -z "$ifname" ] || ip link set "$ifname" down 2>/dev/null || true
-	modprobe -r rx1950_acx 2>/dev/null || true
-	modprobe -r acx-mac80211 2>/dev/null || true
+	if [ -n "$ifname" ]; then
+		ip link set "$ifname" down || return 1
+		sleep 1
+	fi
+	modprobe -r rx1950_acx || return 1
+	modprobe -r acx-mac80211 || return 1
 }
 
 status_radio() {
@@ -184,9 +215,10 @@ connect_radio() {
 	rm -f "$PIDFILE"
 	ip link set "$ifname" up || return 1
 	wpa_supplicant -B -P "$PIDFILE" -i "$ifname" -c "$CONF" || return 1
-	udhcpc -i "$ifname" -b -t 5 -T 2 -A 5
+	udhcpc -i "$ifname" -b -t 5 -T 2 -A 5 >/dev/null 2>&1
 }
 
+acquire_lock || exit 1
 case "${1:-status}" in
 	start) start_radio "${2:-historical}" ;;
 	stop) stop_radio ;;
