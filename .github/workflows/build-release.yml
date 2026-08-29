@@ -126,6 +126,7 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs
       - name: Build root filesystem
+        id: rootfs-build
         run: bash scripts/build.sh rootfs
       - name: Validate root filesystem contract
         run: |
@@ -135,7 +136,7 @@ jobs:
       - name: Record root filesystem digest
         run: sha256sum output/rootfs.ext2 output/buildroot.config > output/rootfs.SHA256SUMS
       - name: Save reusable Buildroot state
-        if: steps.rootfs-cache.outputs.cache-hit != 'true'
+        if: always() && steps.rootfs-build.outcome == 'success' && steps.rootfs-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .build/buildroot-output
