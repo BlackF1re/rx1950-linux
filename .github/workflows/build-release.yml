@@ -57,6 +57,7 @@ jobs:
       id: ${{ steps.meta.outputs.id }}
       tree: ${{ steps.meta.outputs.tree }}
       version: ${{ steps.meta.outputs.version }}
+      rootfs_cache: ${{ steps.meta.outputs.rootfs_cache }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,6 +67,7 @@ jobs:
         run: |
           echo "id=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
           echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          echo "rootfs_cache=$(bash scripts/cache-key.sh rootfs)" >> "$GITHUB_OUTPUT"
 
           latest_major=-1
           latest_minor=-1
@@ -99,36 +101,44 @@ jobs:
           bash scripts/validate-peripherals.sh source
           bash scripts/validate-opkg-feed.sh source
           bash scripts/validate-reproducible.sh source
+          bash scripts/validate-cache.sh
 
   rootfs:
     name: Root filesystem
     needs: plan
     runs-on: ubuntu-24.04
+    concurrency:
+      group: rx1950-rootfs-${{ needs.plan.outputs.rootfs_cache }}
+      cancel-in-progress: false
     env:
       RX1950_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - name: Restore verified source downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dl
-          key: rx1950-buildroot-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
+          key: rx1950-buildroot-sources-v2-${{ runner.os }}-${{ hashFiles('scripts/sources.lock.sh') }}
           restore-keys: |
-            rx1950-buildroot-sources-${{ runner.os }}-
+            rx1950-buildroot-sources-v2-${{ runner.os }}-
       - name: Restore reusable Buildroot state
         id: rootfs-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v6-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/configs/busybox.fragment', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
-          restore-keys: |
-            rx1950-buildroot-output-v6-${{ runner.os }}-2025.02.2-
+          key: rx1950-buildroot-output-v7-${{ runner.os }}-${{ needs.plan.outputs.rootfs_cache }}
+      - name: Restore Buildroot compiler cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.buildroot-ccache
+          key: rx1950-buildroot-ccache-v1-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs python3
       - name: Build root filesystem
         id: rootfs-build
         run: bash scripts/build.sh rootfs
       - name: Validate root filesystem contract
+        id: rootfs-validate
         run: |
           bash scripts/validate-peripherals.sh rootfs output/buildroot.config
           bash scripts/validate-rootfs-payload.sh output/rootfs.ext2
@@ -136,44 +146,14 @@ jobs:
       - name: Record root filesystem digest
         run: sha256sum output/rootfs.ext2 output/buildroot.config > output/rootfs.SHA256SUMS
       - name: Save reusable Buildroot state
-        if: always() && steps.rootfs-build.outcome == 'success' && steps.rootfs-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        if: always() && steps.rootfs-build.outcome == 'success' && steps.rootfs-validate.outcome == 'success' && steps.rootfs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
         with:
           path: .build/buildroot-output
-          key: rx1950-buildroot-output-v6-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/configs/busybox.fragment', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rootfs-${{ needs.plan.outputs.id }}
-          path: output/
-          if-no-files-found: error
-          compression-level: 0
-
-  packages:
-    name: Package feed
-    needs: [plan, rootfs]
-    runs-on: ubuntu-24.04
-    env:
-      RX1950_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Restore verified source downloads
-        uses: actions/cache@v4
-        with:
-          path: dl
-          key: rx1950-buildroot-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
-          restore-keys: |
-            rx1950-buildroot-sources-${{ runner.os }}-
-      - name: Restore verified base Buildroot state
-        uses: actions/cache/restore@v4
-        with:
-          path: .build/buildroot-output
-          key: rx1950-buildroot-output-v6-${{ runner.os }}-2025.02.2-${{ hashFiles('buildroot/external/rx1950/configs/rx1950_defconfig', 'buildroot/external/rx1950/configs/busybox.fragment', 'buildroot/external/rx1950/Config.in', 'buildroot/external/rx1950/external.mk', 'buildroot/external/rx1950/external.desc') }}
-      - name: Install package-feed build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs python3
-      - name: Build package feed
+          key: rx1950-buildroot-output-v7-${{ runner.os }}-${{ needs.plan.outputs.rootfs_cache }}
+      - name: Build package feed from verified base state
         shell: bash
         run: |
-          mkdir -p output
           build_log=output/package-feed-build.log
           if bash scripts/build-opkg-feed.sh >"$build_log" 2>&1; then
             echo "Package feed build completed successfully."
@@ -185,6 +165,15 @@ jobs:
           fi
       - name: Validate package feed
         run: bash scripts/validate-opkg-feed.sh feed output/packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-${{ needs.plan.outputs.id }}
+          path: |
+            output/rootfs.ext2
+            output/buildroot.config
+            output/rootfs.SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
       - uses: actions/upload-artifact@v4
         with:
           name: packages-${{ needs.plan.outputs.id }}
@@ -199,12 +188,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Restore verified source downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dl
-          key: rx1950-kernel-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
+          key: rx1950-kernel-sources-v2-${{ runner.os }}-${{ hashFiles('scripts/sources.lock.sh') }}
           restore-keys: |
-            rx1950-kernel-sources-${{ runner.os }}-
+            rx1950-kernel-sources-v2-${{ runner.os }}-
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev gcc-arm-linux-gnueabi curl git xz-utils
       - name: Build boot kernel and WLAN modules
@@ -235,12 +224,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Restore verified HaRET toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dl
-          key: rx1950-haret-sources-${{ runner.os }}-${{ hashFiles('scripts/build.sh') }}
+          key: rx1950-haret-sources-v2-${{ runner.os }}-${{ hashFiles('scripts/sources.lock.sh') }}
           restore-keys: |
-            rx1950-haret-sources-${{ runner.os }}-
+            rx1950-haret-sources-v2-${{ runner.os }}-
       - name: Install image and HaRET build tools
         run: sudo apt-get update && sudo apt-get install -y build-essential dosfstools e2fsprogs gcc-multilib libc6-i386 lib32z1 mtools parted python3 curl xz-utils
       - uses: actions/download-artifact@v4
@@ -274,7 +263,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [plan, assemble, packages]
+    needs: [plan, assemble, rootfs]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
     runs-on: ubuntu-24.04
     permissions:

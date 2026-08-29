@@ -4,7 +4,8 @@ set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly OUTPUT_DIR="${ROOT_DIR}/output"
-readonly ACX_COMMIT="a282ba2502ac3b10cb6dbf16a35f7ad54e759779"
+# shellcheck source=sources.lock.sh
+source "${ROOT_DIR}/scripts/sources.lock.sh"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 require_line() { grep -Fqx "$1" "$2" || die "$3"; }
@@ -32,6 +33,7 @@ source)
     acx_patch="${ROOT_DIR}/kernel/acx-patches/0001-mem-ack-irqs-before-deferred-work.patch"
     acx_scan_patch="${ROOT_DIR}/kernel/acx-patches/0002-scan-cancel-before-interface-stop.patch"
     build="${ROOT_DIR}/scripts/build.sh"
+    sources_lock="${ROOT_DIR}/scripts/sources.lock.sh"
     opkg="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/opkg/opkg.conf"
     hwmon="${ROOT_DIR}/kernel/patches/0010-rx1950-enable-hwmon.patch"
     audio_dma="${ROOT_DIR}/kernel/patches/0011-rx1950-register-audio-dma.patch"
@@ -88,7 +90,8 @@ source)
     require_fragment 'irqmasked & ~HOST_INT_CMD_COMPLETE' "$acx_patch" 'ACX command completion can be consumed before its poller'
     require_fragment '.cancel_hw_scan' "$acx_scan_patch" 'ACX scan cancellation callback is missing'
     require_fragment 'test_and_clear_bit(ACX_FLAG_SCANNING' "$acx_scan_patch" 'ACX scan completion is not serialized'
-    require_fragment "readonly ACX_COMMIT=\"${ACX_COMMIT}\"" "$build" 'ACX source commit is not pinned'
+    require_fragment "readonly ACX_COMMIT=\"${ACX_COMMIT}\"" "$sources_lock" 'ACX source commit is not pinned'
+    require_fragment 'source "${ROOT_DIR}/scripts/sources.lock.sh"' "$build" 'build does not consume the pinned source lock'
     require_fragment 'kernel/acx-patches/*.patch' "$build" 'local ACX patch set is not applied'
     require_fragment 'CONFIG_ACX_MAC80211_MEM=m' "$build" 'ACX memory transport not built'
     require_fragment 'CONFIG_ACX_MAC80211_PCI=n' "$build" 'unneeded ACX PCI transport enabled'

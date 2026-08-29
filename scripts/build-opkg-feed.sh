@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Build an rx1950-native opkg feed from the exact Buildroot toolchain/state used
-# by the system image. The package job restores the verified base Buildroot
-# cache, then this script builds only the optional package delta and packages
-# that delta into .ipk files.
+# by the system image. It builds only the optional package delta from the live,
+# verified base state and packages that delta into .ipk files.
 set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly OUTPUT_DIR="${ROOT_DIR}/output/packages"
 readonly DOWNLOAD_DIR="${ROOT_DIR}/dl"
 readonly BUILD_DIR="${ROOT_DIR}/.build"
-readonly BUILDROOT_VERSION="2025.02.2"
-readonly BUILDROOT_SHA256="4a74e9a6f82ef8660ae2ef865d0ad61a4e9ccd67e2aeef885cae1165581ed5ac"
+# shellcheck source=sources.lock.sh
+source "${ROOT_DIR}/scripts/sources.lock.sh"
 readonly EXTERNAL_DIR="${ROOT_DIR}/buildroot/external/rx1950"
 readonly PACKAGE_FRAGMENT="${EXTERNAL_DIR}/configs/rx1950_packages.fragment"
 readonly BUILDROOT_OUTPUT="${BUILD_DIR}/buildroot-output"

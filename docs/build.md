@@ -59,18 +59,20 @@ The Git commit belongs in `provenance.txt`, not in binaries whose source tree is
 
 ```text
 Plan
-├── Root filesystem ── Package feed
+├── Root filesystem + package feed
 └── Kernel
       │
 Root filesystem + Kernel
       └── Assemble and verify
               │
-Package feed ─┴── Publish release (main only)
+Verified feed + image ── Publish release (main only)
 ```
 
-Rootfs and kernel build independently. Their SHA-256 hand-off manifests are checked before assembly. The package feed is built from the verified Buildroot state and rejected if a package would overwrite the sealed base image, has an incomplete dependency closure or carries the wrong ELF ABI.
+Rootfs and kernel build independently. Their SHA-256 hand-off manifests are checked before assembly. The package feed is built in the rootfs job from the same live, verified Buildroot state; it never depends on a cache entry becoming visible to another job. A package is rejected if it would overwrite the sealed base image, has an incomplete dependency closure or carries the wrong ELF ABI.
 
-The first Buildroot build after a configuration change is intentionally expensive because it builds the ARM/musl toolchain. Exact reusable state is cached; the cache is never allowed to substitute a differently configured rootfs.
+The first Buildroot build after a real configuration change is intentionally expensive because it builds the ARM/musl toolchain. Exact reusable state is keyed by normalized Kconfig content and the pinned Buildroot version; comments, documentation, workflow logic, rootfs overlays and post-build scripts do not invalidate it. An inexact Buildroot output is never restored. Builds sharing a key are serialized so two runs cannot race to reserve the same cache entry. Compiler objects have a separate ABI-scoped ccache to reduce the cost of genuine configuration changes.
+
+Verified source-download caches depend only on `scripts/sources.lock.sh`. Every downloaded payload is still checksum-verified before use, so an older compatible download cache is safe while ordinary edits to `scripts/build.sh` no longer create duplicate caches. `scripts/validate-cache.sh` enforces these rules in Plan before expensive jobs begin.
 
 ## Release assets
 
