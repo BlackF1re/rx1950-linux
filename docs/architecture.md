@@ -1,120 +1,60 @@
 # Architecture
 
-## Boot and storage model
+## Boot and storage
 
-The boot path is intentionally non-destructive:
-
-```
+```text
 Windows Mobile 6.1
-        |
-        v
-HaRET from the SD card FAT partition
-        |
-        v
-Pinned rx1950 compatibility kernel
-        |
-        v
-Linux root filesystem on the SD card ext4 partition
+        ↓
+HaRET on SD/FAT16
+        ↓
+Linux 6.2 RX1950 compatibility kernel
+        ↓
+SD partition 2 / ext4 root
 ```
 
-HaRET receives only generated, release-owned files: its executable, boot
-configuration, kernel, optional initramfs and checksum manifest. It must never
-be configured to write the internal flash. The image layout keeps the boot
-partition separately mountable from Windows Mobile and Linux.
+The supported path is deliberately non-destructive. HaRET boots only release-owned files from SD; documented Linux tools do not install to internal NAND. Removing the card restores the stock Windows Mobile path.
 
-The raw release image has no reserved tail. It contains a fixed 16 MiB FAT16
-boot partition and the smallest ext4 seed filesystem that holds the selected
-userspace. At first boot, an early guarded service verifies the expected
-layout, extends only the second SD-card partition to the card end, and grows
-the mounted ext4 filesystem. If the running kernel cannot reread the changed
-partition table, it performs one immediate reboot before the filesystem grow.
-It never operates on internal storage or an unexpected partition layout.
+The image contains a 16 MiB FAT boot partition and an ext4 root seed. `S05grow-root` verifies the expected layout, expands only `/dev/mmcblk0p2` to the card end and grows ext4. See [storage.md](storage.md).
 
-## Runtime model
+## Boot-safety boundary
 
-The default system uses a compact BusyBox-oriented userspace and starts only
-services that have a device-facing purpose: console, input, storage handling,
-network management, time, SSH and the optional graphical session. Diagnostic,
-debug and graphical packages are opt-in. Persistent user data and the package
-database reside on the SD root/data filesystem.
+The RX1950 SD controller owns the root filesystem, so experimental devices must never be able to unregister or destabilize it.
 
-The base image includes `opkg` and a project-owned feed definition. Feed
-packages are rebuilt with the exact same Buildroot 2025.02.2 toolchain and
-ARM920T/ARMv4T, EABI soft-float, musl ABI as the image. The package architecture
-is versioned as `rx1950_armv4t_musl_v1`; unrelated OpenWrt, Entware or Debian
-repositories are explicitly incompatible and must not be mixed with it.
+Linux `platform_add_devices()` rolls back devices already registered in the same array if a later registration fails. The 0.1.14 engineering image violated this safety boundary while experimenting with peripheral/DMA registration and failed on hardware with `unknown-block(179,2)`.
 
-The feed builder snapshots the sealed base package/file set, enables only the
-optional package fragment, and emits packages only for final target files that
-survive Buildroot `target-finalize`. It refuses to overwrite any base-image
-file or let two feed packages own the same path. Configuration files under
-`/etc` are emitted as opkg `conffiles`, and package-time maintainer scripts
-reproduce the relevant Buildroot finalization semantics. CI opens every `.ipk`,
-checks its archive structure, dependency closure, SHA-256 digest and ARM EABI
-soft-float ELF headers before the feed can become a release asset.
+Policy since 0.1.15:
 
-Engineering-feed transport is authenticated by HTTPS and package payloads are
-bound to SHA-256 digests in the index/release manifest. GPG repository signing
-is not enabled in the engineering image yet: Buildroot's opkg 0.7.0 signature
-path pulls in GPGME and its supporting stack, whose footprint must be measured
-on this 32 MiB target. A cryptographically signed repository remains a gate for
-the first release that is claimed as generally usable.
+- keep the upstream S3CMCI/root path unchanged;
+- keep optional engineering devices outside the boot-critical board array;
+- load WLAN only as kernel-matched modules after root is available;
+- leave S3C2442 DMA compiled but do not activate the unsafe early RX1950 DMA path until audio can be restored without risking storage.
 
-Hardware monitoring uses the in-tree S3C ADC hwmon driver. Battery-voltage ADC
-channel 0 is exported with the same board calibration used by the battery
-driver, while all eight ADC channels are also exposed as raw values for board
-investigation. Standard hwmon consumers use `lm-sensors`; `rx1950-sensors`
-adds the raw ADC, thermal-zone and power-supply views without probing unknown
-hardware.
+USB CDC-NCM/SSH remains the recovery channel after userspace starts.
 
-## Kernel policy
+## Userspace and packages
 
-The upstream legacy machine description is available through Linux 6.2. The
-kernel subtree pins a reviewed compatibility release, its exact source
-revision, cross compiler and board configuration. Board changes are stored as
-small, numbered patches with rationale and an on-device test reference. Any
-forward-port beyond that baseline is an explicit engineering effort, not a
-version-only upgrade.
+The base is Buildroot/BusyBox with Dropbear, hardware diagnostics, WLAN tools and a small Matchbox/TinyX session. The system ABI is ARM920T/ARMv4T, EABI, soft-float, musl.
 
-Boot-critical platform devices are intentionally kept on the upstream RX1950
-registration path. Optional engineering devices must not be inserted into the
-`platform_add_devices()` array: that helper unregisters every earlier device
-if any later registration fails, so an experimental peripheral must never be
-able to remove the SD controller that provides the root filesystem. The S3C
-hwmon device is therefore registered separately after the core board array.
+`opkg` uses only the project feed (`rx1950_armv4t_musl_v1`). Packages are built with the same Buildroot toolchain as the image. CI rejects packages that overwrite sealed base files, collide with another package, have unresolved dependencies or contain the wrong ARM ABI. `/etc` package files are emitted as conffiles.
 
-The 0.1.14 engineering image violated that rule while also changing the legacy
-S3CMCI CD/WP probe control flow. On hardware it reached the kernel and then
-panicked with `VFS: Unable to mount root fs on unknown-block(179,2)`. The
-published image layout and ext4 superblock were verified structurally against
-the booting 0.1.13 image, so the regression is treated as a kernel-side
-boot-path failure. Both risky changes are reverted; SD/MMC remains on the
-previously boot-tested PIO path.
+Unrelated Debian, OpenWrt and Entware feeds are not compatible.
 
-S3C2442 DMA support remains compiled into the compatibility kernel, but the DMA
-platform device is not registered by the RX1950 board until a non-regressive
-activation design is validated on hardware. Consequently UDA1380 PCM remains
-blocked at the DMA acquisition stage for now; preserving bootable storage takes
-priority over enabling audio through an unverified early platform change.
+Engineering-feed transport currently relies on HTTPS plus SHA-256 package/index manifests. Cryptographic repository signing remains a usability-release gate because its GPGME footprint must first be measured on the 32 MiB target.
 
-Experimental WLAN is deliberately outside the boot-critical board-device
-array. The pinned ACX100 memory-transport driver and RX1950 GPIO/MMIO glue are
-built as kernel-matched modules and carried on the FAT boot partition. An early
-userspace installer accepts only the two expected module paths under the
-currently running `uname -r`; an old, malformed or path-injecting bundle is
-ignored. The modules are not loaded until later userspace has found proprietary
-firmware, so WLAN failure cannot remove the SD root or prevent USB recovery.
+## Kernel and hardware policy
 
-## Artifact contract
+Linux 6.2 is pinned because it is the last upstream release carrying the legacy RX1950 machine description. Newer kernels require an explicit forward-port and equivalent physical testing.
 
-An engineering release contains the compressed SD image, SHA-256 checksum,
-build provenance, kernel/optional module payload, HaRET boot files and the
-native package-feed metadata/assets produced by the same CI run. Continuous
-integration builds the root filesystem and kernel independently, verifies their
-handoff digests, assembles the image and validates the sealed payload before a
-main-branch release is published.
+The onboard TI TNETW1100B/ACX100 uses a pinned mac80211 memory-transport driver plus a small RX1950 glue module. Proprietary firmware is external. The default glue follows the historical RX1950 wiring, including the GPA11/Blue shared power line; the alternative no-GPA11 mode is diagnostic only until hardware proves independence.
 
-A release claimed as generally usable additionally requires the package-feed
-trust key/signature and the complete hardware acceptance report described in
-[goals.md](goals.md). CI success alone is never treated as evidence that an
-untested peripheral works on the physical handheld.
+Hardware support claims are kept separate from code presence: [hardware.md](hardware.md) is the release acceptance matrix and [hardware-inventory.md](hardware-inventory.md) is the component-level engineering map.
+
+## Reproducibility and provenance
+
+Release payloads normalize build time/locale, kernel build identity, ext4 UUID/hash seed, FAT metadata, MBR signature, module archive metadata and XZ threading. Buildroot reproducible mode is enabled. Identical source tree/configuration/version is expected to yield identical payload hashes.
+
+The Git commit is recorded separately in `provenance.txt`; it must not make otherwise identical PR/main binaries differ. See [build.md](build.md).
+
+## Release boundary
+
+A release is assembled only from already validated rootfs/kernel artifacts and the separately validated package feed. Publication does not rebuild them. CI can prove source, ABI, filesystem and artifact contracts; only an on-device test can promote a peripheral to supported.

@@ -1,0 +1,44 @@
+#!/bin/sh
+# Best-effort boot-time NTP sync. System time is UTC; /etc/localtime controls
+# how applications present it in the timezone selected by the user.
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+log() {
+    printf 'rx1950-time-sync: %s\n' "$*" > /dev/kmsg 2>/dev/null || true
+}
+
+sync_once() {
+    ntpd -n -q -p time.cloudflare.com -p pool.ntp.org >/dev/kmsg 2>&1 &
+    ntp_pid=$!
+    (
+        sleep 20
+        kill "$ntp_pid" 2>/dev/null || true
+    ) &
+    guard_pid=$!
+
+    wait "$ntp_pid"
+    rc=$?
+    kill "$guard_pid" 2>/dev/null || true
+    wait "$guard_pid" 2>/dev/null || true
+    return "$rc"
+}
+
+command -v ntpd >/dev/null 2>&1 || exit 0
+
+attempt=0
+while [ "$attempt" -lt 24 ]; do
+    attempt=$((attempt + 1))
+    if ip route 2>/dev/null | grep -q '^default '; then
+        if sync_once; then
+            hwclock -w 2>/dev/null || true
+            log "clock synchronized; timezone=$(cat /etc/timezone 2>/dev/null || printf 'Etc/UTC')"
+            exit 0
+        fi
+    fi
+    sleep 5
+done
+
+log 'no usable NTP path during boot window'
+exit 0

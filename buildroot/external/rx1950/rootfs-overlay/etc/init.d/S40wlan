@@ -1,7 +1,7 @@
 #!/bin/sh
-# Safe WLAN bootstrap. Proprietary firmware is never bundled in the image;
-# if the user placed it on the FAT partition, import it and start the isolated
-# ACX modules. Missing firmware is non-fatal and never delays SD/root boot.
+# Safe WLAN bootstrap. Release images contain the three verified ACX100
+# firmware blobs required by the onboard TNETW1100B. A FAT import remains a
+# recovery fallback if the rootfs copy was removed or replaced.
 #
 # The default start mode follows the historical RX1950 wiring, including the
 # shared GPA11 WLAN-power/Blue line.
@@ -11,15 +11,11 @@ export PATH
 
 case "${1:-start}" in
 	start)
-		if ! [ -r /lib/firmware/WLANGEN.BIN ]; then
+		if ! [ -r /lib/firmware/WLANGEN.BIN ] || ! [ -r /lib/firmware/RADIO0d.BIN ]; then
 			rx1950-wlan-firmware import >/dev/kmsg 2>&1 || true
 		fi
-		if [ -r /lib/firmware/WLANGEN.BIN ]; then
-			for f in /lib/firmware/RADIO??.BIN; do
-				[ -r "$f" ] || continue
-				rx1950-wlan start historical >/dev/kmsg 2>&1 || true
-				break
-			done
+		if [ -r /lib/firmware/WLANGEN.BIN ] && [ -r /lib/firmware/RADIO0d.BIN ]; then
+			rx1950-wlan start historical >/dev/kmsg 2>&1 || true
 		fi
 		;;
 	stop)

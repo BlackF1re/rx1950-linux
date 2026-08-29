@@ -15,9 +15,11 @@ case "${1:-source}" in
 source)
     kcfg="${ROOT_DIR}/kernel/rx1950_defconfig"
     rcfg="${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    busybox_fragment="${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
     grow="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S05grow-root"
     mods="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S10kernel-modules"
     usb="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S35usb-gadget"
+    time_sync="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S38time-sync"
     wlan_init="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S40wlan"
     dhcp="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/share/udhcpc/rx1950-usb.script"
     sensors="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-sensors"
@@ -25,6 +27,7 @@ source)
     fw="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-wlan-firmware"
     blue="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-blue"
     glue="${ROOT_DIR}/kernel/modules/rx1950-acx/rx1950_acx.c"
+    acx_patch="${ROOT_DIR}/kernel/acx-patches/0001-mem-ack-irqs-before-deferred-work.patch"
     build="${ROOT_DIR}/scripts/build.sh"
     opkg="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/opkg/opkg.conf"
     hwmon="${ROOT_DIR}/kernel/patches/0010-rx1950-enable-hwmon.patch"
@@ -68,7 +71,10 @@ source)
     require_fragment 'gpio_direction_output(RX1950_WLAN_AUX1, 1)' "$glue" 'historical GPC8 WLAN state is not asserted'
     require_fragment 'gpio_direction_output(RX1950_WLAN_AUX2, 1)' "$glue" 'historical GPC9 WLAN state is not asserted'
 
+    require_fragment 'adev->irq_reason |= irqmasked;' "$acx_patch" 'ACX MEM IRQ causes are not latched in hard IRQ'
+    require_fragment 'IO_ACX_IRQ_ACK, irqmasked' "$acx_patch" 'ACX MEM IRQ causes are not ACKed before deferred work'
     require_fragment "readonly ACX_COMMIT=\"${ACX_COMMIT}\"" "$build" 'ACX source commit is not pinned'
+    require_fragment 'kernel/acx-patches/*.patch' "$build" 'local ACX patch set is not applied'
     require_fragment 'CONFIG_ACX_MAC80211_MEM=m' "$build" 'ACX memory transport not built'
     require_fragment 'CONFIG_ACX_MAC80211_PCI=n' "$build" 'unneeded ACX PCI transport enabled'
     require_fragment 'CONFIG_ACX_MAC80211_USB=n' "$build" 'unneeded ACX USB transport enabled'
@@ -81,25 +87,29 @@ source)
         BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y BR2_PACKAGE_LIBCURL_CURL=y \
         BR2_PACKAGE_LIBCURL_OPENSSL=y BR2_PACKAGE_HTOP=y BR2_PACKAGE_EVTEST=y \
         BR2_PACKAGE_I2C_TOOLS=y BR2_PACKAGE_LM_SENSORS=y \
-        BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y; do
+        BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y \
+        BR2_TARGET_TZ_INFO=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
     done
+    require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
+    require_line 'CONFIG_NTPD=y' "$busybox_fragment" 'BusyBox NTP client is disabled'
     require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="64M"' "$rcfg" 'rootfs seed size is not 64 MiB'
     if grep -Fq 'BR2_PACKAGE_CURL=y' "$rcfg"; then die 'legacy Buildroot BR2_PACKAGE_CURL must not be used'; fi
 
     require_fragment '/proc/self/mountinfo' "$grow" 'root grower still relies on /dev/root alias'
     require_fragment '/sys/class/block/mmcblk0p2/dev' "$grow" 'root grower does not verify root device identity'
     require_fragment 'kernel-modules.tar' "$mods" 'module installer does not consume FAT module bundle'
-    require_fragment 'udhcpc -i usb0' "$usb" 'USB DHCP client is not started'
+    require_fragment 'udhcpc -f -i usb0' "$usb" 'persistent USB DHCP client is not started'
     require_fragment '192.168.7.2/24' "$usb" 'fixed USB recovery address lost'
     require_fragment 'ip route replace default' "$dhcp" 'USB default route handling missing'
+    require_fragment 'rx1950-time-sync' "$time_sync" 'boot-time NTP synchronization is not started'
     require_fragment '/sys/devices/platform/s3c24xx-adc/s3c-hwmon/adc*_raw' "$sensors" 'sensor helper does not use verified Linux 6.2 ADC path'
     require_fragment 'modprobe acx-mac80211' "$wlan" 'WLAN helper does not load ACX driver first'
     require_fragment 'modprobe rx1950_acx' "$wlan" 'WLAN helper does not load RX1950 glue'
     require_fragment 'no-gpa11-power' "$wlan" 'WLAN helper lacks the explicit no-GPA11 diagnostic mode'
     require_fragment 'OPENBSD_URL=' "$fw" 'ACX firmware fetch helper missing'
     require_fragment 'WLANGEN.BIN' "$fw" 'ACX main firmware mapping missing'
-    require_fragment 'RADIO${suffix}.BIN' "$fw" 'ACX radio firmware mapping missing'
+    require_fragment "tr 'A-F' 'a-f'" "$fw" 'ACX radio firmware hex suffix is not normalized to driver case'
     require_fragment 'shared_power_active' "$blue" 'Blue helper does not protect the shared GPA11 WLAN power line'
     require_fragment 'echo netdev > "$LED/trigger"' "$blue" 'Blue LED cannot use explicit WLAN trigger in diagnostic independent mode'
     require_fragment 'echo none > "$LED/trigger"' "$blue" 'Blue LED cannot return to manual mode in diagnostic independent mode'
@@ -136,9 +146,11 @@ rootfs)
         BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y BR2_PACKAGE_LIBCURL_CURL=y \
         BR2_PACKAGE_LIBCURL_OPENSSL=y BR2_PACKAGE_HTOP=y BR2_PACKAGE_EVTEST=y \
         BR2_PACKAGE_I2C_TOOLS=y BR2_PACKAGE_LM_SENSORS=y \
-        BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y; do
+        BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y \
+        BR2_TARGET_TZ_INFO=y BR2_PACKAGE_TZDATA=y; do
         require_line "$req" "$cfg" "generated rootfs dropped: $req"
     done
+    require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
     require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="64M"' "$cfg" 'generated rootfs seed is not 64 MiB'
     ;;
 
@@ -150,13 +162,16 @@ image)
     for path in \
         /usr/bin/htop /usr/bin/evtest /usr/sbin/i2cdetect /usr/bin/sensors \
         /usr/bin/strace /usr/sbin/iw /usr/bin/curl /usr/bin/kmod /usr/sbin/wpa_supplicant \
-        /usr/sbin/wpa_passphrase /usr/sbin/rx1950-sensors /usr/sbin/rx1950-wlan \
-        /usr/sbin/rx1950-wlan-firmware /usr/sbin/rx1950-blue /etc/opkg/opkg.conf \
-        /sbin/udhcpc /usr/share/udhcpc/rx1950-usb.script /etc/init.d/S05grow-root \
-        /etc/init.d/S10kernel-modules /etc/init.d/S35usb-gadget /etc/init.d/S40wlan; do
+        /usr/sbin/wpa_passphrase /usr/sbin/ntpd /usr/sbin/rx1950-time-sync \
+        /usr/sbin/rx1950-timezone /usr/sbin/rx1950-sensors /usr/sbin/rx1950-wlan \
+        /usr/sbin/rx1950-wlan-firmware /usr/sbin/rx1950-blue /etc/default/dropbear \
+        /etc/ssl/certs/ca-certificates.crt /etc/opkg/opkg.conf /sbin/udhcpc \
+        /usr/share/udhcpc/rx1950-usb.script /etc/init.d/S05grow-root \
+        /etc/init.d/S10kernel-modules /etc/init.d/S35usb-gadget /etc/init.d/S38time-sync \
+        /etc/init.d/S40wlan /lib/firmware/WLANGEN.BIN /lib/firmware/RADIO0d.BIN \
+        /lib/firmware/RADIO11.BIN; do
         rootfs_has "$rootfs" "$path" || die "sealed rootfs missing $path"
     done
-    if rootfs_has "$rootfs" /lib/firmware/WLANGEN.BIN; then die 'sealed rootfs illegally bundles proprietary WLANGEN.BIN'; fi
     ;;
 
 *) die 'usage: validate-peripherals.sh {source|kernel [config]|rootfs [config]|image}' ;;

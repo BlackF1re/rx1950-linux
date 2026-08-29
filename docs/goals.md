@@ -1,63 +1,38 @@
-# Delivery plan and release gates
+# Release gates
 
-This document defines “complete” for rx1950-linux. A feature is not called
-supported because it compiles: it must be present in the image, exerciseable
-on the physical device, and have a repeatable test result recorded for the
-release.
+A feature is supported only when it is present in the image **and** has a repeatable result on a physical rx1950. Compilation/CI alone is not hardware evidence.
 
 ## Product contract
 
-The supported boot route is an SD card launched from Windows Mobile using
-HaRET. The installer must not repartition, erase, flash or otherwise change
-the device's internal ROM or NAND. A user must be able to recover the original
-Windows Mobile boot simply by removing the card and resetting the device.
+- Boot from SD through HaRET without writing internal NAND/Windows Mobile.
+- FAT boot partition readable by Windows Mobile; ext4 root expands to the SD-card end on first boot.
+- Keep the 32 MiB system responsive by making the base image small and installing optional software through the native `opkg` feed.
+- Experimental peripherals must fail without breaking SD root, console or USB recovery.
 
-The shipped image must fit a 1 GiB or larger SD card, expose a FAT boot volume
-that Windows Mobile can read, use an ext4 Linux data volume that grows to the
-full SD-card capacity on first boot, and retain enough
-free space and RAM headroom for interactive use on a 32 MiB machine. The
-default image is minimal; applications are added through the project package
-feed using `opkg`.
+## Gates
 
-## Release gates
-
-| Gate | Evidence required before release |
+| Gate | Required evidence |
 | --- | --- |
-| Reproducible build | Clean, pinned-source build on GitHub Actions; manifests, SHA-256 sums and tool versions are saved with the artifact. |
-| Boot safety | HaRET starts the exact kernel in the image; removing the SD card demonstrably returns to Windows Mobile. No internal flash write is issued by any documented path. |
-| Storage | FAT boot files are readable under Windows Mobile; first boot expands only the expected root partition to the card end; SD detection, read/write, remount and unclean-removal recovery pass. |
-| Base system | `init`, console login, UTC RTC, writable persistent data, SSH and package database work after a cold boot. |
-| Hardware | Each applicable item in the hardware matrix has an on-device result. Unverified items stay marked experimental or unavailable. |
-| Power | Battery reporting, controlled shutdown, display blanking and suspend/resume are tested independently. A failure must leave a documented safe recovery path. |
-| Networking | WLAN association, DHCP, DNS, TCP transfer and reconnection after suspend pass with the supported access-point security. |
-| Updates | The feed key, package signature verification, upgrade, rollback/recovery instructions and available-space checks are tested on a freshly written card. |
-| Usability | Touch calibration persists; the graphical session, keyboard path, physical navigation and readable QVGA layout are exercised without external serial equipment. |
+| Reproducibility | Identical source tree/configuration/version produces byte-identical kernel, rootfs, module bundle, image and package payloads; source commit is recorded separately in provenance. |
+| Boot safety | HaRET boots the shipped kernel; removing SD returns to Windows Mobile; documented paths issue no internal-flash writes. |
+| Storage | FAT is readable; root expansion touches only expected `/dev/mmcblk0p2`; read/write/remount and recovery tests pass. |
+| Base system | Console, persistent root, USB/SSH recovery and `opkg` operate after cold boot. |
+| Hardware | Applicable rows in [hardware.md](hardware.md) have recorded on-device results. |
+| Power | Battery/charger reporting, display blanking, shutdown and suspend/resume have safe recovery behaviour. |
+| Networking | WLAN scan, association, DHCP/DNS, sustained transfer and reconnect pass on supported AP settings. |
+| Package management | Feed update/install/remove/reinstall, dependency handling, conffiles, low-space and interrupted-operation behaviour pass on hardware. |
+| Usability | Touch calibration, physical navigation, QVGA UI and on-screen keyboard work within measured RAM/storage limits. |
+| Trust | A generally usable release must authenticate package/release metadata; the engineering feed currently uses HTTPS + SHA-256 but is not yet cryptographically signed. |
 
-## Work sequence
+## Current priorities
 
-1. Pin and build the compatibility kernel, cross toolchain and HaRET assets;
-   generate a bootable two-partition SD image.
-2. Bring up console, LCD/backlight, touchscreen, physical keys, SD/MMC and
-   persistent storage. This is the minimum safe test image.
-3. Enable RTC, battery/charging reporting, LEDs, audio, USB gadget/client,
-   infrared and WLAN, documenting chipset-specific firmware or legal
-   redistribution constraints.
-4. Add the small graphical session and input methods, then measure cold-boot
-   time, idle RAM, interactive RAM and image size on real hardware.
-5. Produce the signed `opkg` repository and define upgrade compatibility,
-   key rotation and failure recovery.
-6. Automate image inspection and test reports in Actions; publish only the
-   artifact set that meets every release gate above.
+1. Preserve the proven SD/root/USB recovery path.
+2. Complete physical WLAN acceptance.
+3. Restore audio through a safe, isolated S3C2442 DMA design.
+4. Validate RTC, suspend/wakeup, IrDA/UART and read-only NAND inventory.
+5. Resolve ADC2-ADC7 and the board-level components tracked in [hardware-inventory.md](hardware-inventory.md).
+6. Finalize the PDA-oriented GUI and package/release trust path.
 
-## Non-goals and honest boundaries
+## Boundaries
 
-- No internal-flash Linux installer is planned for the supported path.
-- The device has no integrated Bluetooth, camera, cellular modem, GPS, video
-  output or hardware 3D accelerator. SDIO accessories are supported only when
-  their driver, firmware and power requirements are separately validated.
-- A modern desktop environment, web browser or general Python distribution is
-  outside the default image budget. Small command-line and graphical packages
-  remain available when they are compatible with ARMv4T and the package feed.
-- Mainline kernels newer than 6.2 do not include `CONFIG_MACH_RX1950`; a newer
-  kernel requires an explicitly maintained forward-port and equivalent device
-  testing before it can replace the compatibility baseline.
+The supported path does not install Linux to internal NAND. The RX1950 has no integrated Bluetooth, GPS, cellular modem, camera or 3D accelerator. Linux newer than 6.2 requires an explicit RX1950 forward-port because the legacy machine support was removed upstream.
