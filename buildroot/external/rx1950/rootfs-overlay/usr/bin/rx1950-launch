@@ -1,0 +1,4 @@
+#!/bin/sh
+# Give GUI commands started by the hardware-key daemon an X session context.
+export DISPLAY="${DISPLAY:-:0.0}" HOME="${HOME:-/root}"
+exec "$@"

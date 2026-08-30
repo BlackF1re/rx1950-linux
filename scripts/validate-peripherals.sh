@@ -115,6 +115,8 @@ source)
         BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
         BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
         BR2_PACKAGE_MATCHBOX_COMMON=y BR2_PACKAGE_MATCHBOX_COMMON_PDA=y \
+        BR2_PACKAGE_GPE_CONF_RX1950=y BR2_PACKAGE_TRIGGERHAPPY=y \
+        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XSET=y BR2_PACKAGE_LEAFPAD=y \
         BR2_PACKAGE_DIALOG=y BR2_PACKAGE_XTERM=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
     done
@@ -151,6 +153,11 @@ source)
     require_fragment 'rx1950-wlan start historical' "$wlan_init" 'boot WLAN path does not follow the historical RX1950 wiring'
     require_fragment 'Xorg :0 -config /etc/X11/xorg.conf' "$xserver" 'Xorg framebuffer server is not started'
     require_fragment 'mb-applet-menu-launcher' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'Matchbox application menu is not started'
+    require_fragment 'MATCHBOX_THEME' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'persistent Matchbox theme selection is missing'
+    require_fragment 'exec gpe-conf "$@"' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-settings-launcher" 'settings launcher does not open the graphical control center'
+    require_fragment 'exec gpe-conf wifi' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" 'Wi-Fi launcher does not open the native graphical applet'
+    require_fragment 'key-reload)' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-control" 'button assignments are not reloaded atomically'
+    require_fragment 'user root' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/default/triggerhappy" 'hardware button actions cannot control the root-owned PDA session'
     if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox"; then
         die 'on-screen keyboard must not occupy the desktop at boot'
     fi
@@ -160,8 +167,10 @@ source)
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/mb-applet-xterm-wrapper.sh" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-keyboard" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-launch" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-settings-launcher" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-control" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-settings" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-wifi-ui"; do
         test -s "$gui_script" || die "GUI script is missing: $gui_script"
@@ -212,7 +221,9 @@ rootfs)
         BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y \
         BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
         BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
-        BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y; do
+        BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
+        BR2_PACKAGE_GPE_CONF_RX1950=y BR2_PACKAGE_TRIGGERHAPPY=y \
+        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XSET=y BR2_PACKAGE_LEAFPAD=y; do
         require_line "$req" "$cfg" "generated rootfs dropped: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
@@ -231,6 +242,12 @@ image)
         /usr/sbin/rx1950-usb-dhcp /usr/bin/amixer /usr/bin/arecord \
         /usr/sbin/alsactl /usr/bin/speaker-test /usr/bin/xinput \
         /usr/bin/xinput_calibrator \
+        /usr/bin/gpe-conf /usr/sbin/rx1950-control /usr/sbin/thd \
+        /usr/bin/xcalc /usr/bin/xset /usr/bin/leafpad /usr/bin/rx1950-launch \
+        /etc/triggerhappy/triggers.d/rx1950.conf /etc/default/triggerhappy \
+        /etc/default/rx1950-power /etc/default/rx1950-ui \
+        /usr/share/applications/rx1950-calculator.desktop \
+        /usr/share/applications/rx1950-editor.desktop \
         /usr/sbin/rx1950-timezone /usr/sbin/rx1950-sensors /usr/sbin/rx1950-wlan \
         /usr/sbin/rx1950-wlan-firmware /usr/sbin/rx1950-blue /etc/default/dropbear \
         /etc/ssl/certs/ca-certificates.crt /etc/opkg/opkg.conf /sbin/udhcpc \

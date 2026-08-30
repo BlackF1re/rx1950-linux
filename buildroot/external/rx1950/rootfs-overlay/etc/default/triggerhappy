@@ -1,0 +1,3 @@
+# The rx1950 is a single-user appliance.  Button actions launch the root-owned
+# Matchbox session and its control helpers, so they must retain root privileges.
+DAEMON_ARGS="--daemon --triggers /etc/triggerhappy/triggers.d --socket /var/run/thd.socket --pidfile /var/run/thd.pid --user root /dev/input/event*"

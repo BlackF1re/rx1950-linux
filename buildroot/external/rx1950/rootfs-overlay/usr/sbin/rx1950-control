@@ -1,0 +1,115 @@
+#!/bin/sh
+# Privileged backend for the on-demand graphical control center.
+set -eu
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH DISPLAY="${DISPLAY:-:0.0}"
+
+backlight() {
+    for d in /sys/class/backlight/*; do
+        [ -r "$d/max_brightness" ] && { printf '%s\n' "$d"; return; }
+    done
+    return 1
+}
+
+wifi_iface() {
+    for d in /sys/class/net/wlan*; do [ -e "$d" ] && { basename "$d"; return; }; done
+    return 1
+}
+
+escape_wpa() { printf '%s' "$1" | sed 's/[\\"]/\\&/g'; }
+
+write_network() {
+    mode=$1 ssid=$2 password=${3:-}
+    case "$ssid$password" in *'\n'*|*'\r'*) exit 2;; esac
+    escaped_ssid=$(escape_wpa "$ssid")
+    umask 077
+    {
+        printf 'ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1\ncountry=RU\nap_scan=1\n\n'
+        printf 'network={\n    ssid="%s"\n    scan_ssid=1\n' "$escaped_ssid"
+        if [ "$mode" = psk ]; then
+            [ "${#password}" -ge 8 ] && [ "${#password}" -le 63 ] || exit 2
+            printf '    key_mgmt=WPA-PSK\n    psk="%s"\n' "$(escape_wpa "$password")"
+        else
+            printf '    key_mgmt=NONE\n'
+        fi
+        printf '}\n'
+    } > /etc/wpa_supplicant.conf
+    rx1950-wlan connect >/dev/null
+    dev=$(wifi_iface)
+    address=$(ip -4 -o addr show dev "$dev" 2>/dev/null | awk 'NR==1 {print $4}')
+    printf 'Connected to %s\n%s\n' "$ssid" "${address:-No IPv4 address}"
+}
+
+key_file=/etc/triggerhappy/triggers.d/rx1950.conf
+case "${1:-}" in
+    brightness-get)
+        d=$(backlight); max=$(cat "$d/max_brightness"); now=$(cat "$d/actual_brightness")
+        printf '%s\n' $((now * 100 / max)) ;;
+    brightness-set)
+        case "${2:-}" in ''|*[!0-9]*) exit 2;; esac
+        d=$(backlight); max=$(cat "$d/max_brightness"); value=$((max * $2 / 100))
+        [ "$value" -gt 0 ] || value=1; [ "$value" -le "$max" ] || value=$max
+        printf '%s\n' "$value" > "$d/brightness" ;;
+    volume-get)
+        amixer get Master | sed -n 's/.*\[\([0-9][0-9]*\)%\].*/\1/p' | tail -1 ;;
+    volume-set)
+        case "${2:-}" in ''|*[!0-9]*) exit 2;; esac
+        amixer -q sset Master "$2%" unmute ;;
+    theme-get)
+        matchbox-remote -r 2>/dev/null || printf 'MBOpus\n' ;;
+    theme)
+        theme=${2:-}
+        case "$theme" in MBOpus|Default|blondie) ;; *) exit 2;; esac
+        [ -d "/usr/share/themes/$theme/matchbox" ] || exit 2
+        printf 'MATCHBOX_THEME=%s\n' "$theme" > /etc/default/rx1950-ui
+        matchbox-remote -t "$theme" ;;
+    keyboard-get) rx1950-keyboard status ;;
+    keyboard) rx1950-keyboard layout "$2" ;;
+    keyboard-toggle) rx1950-keyboard toggle ;;
+    wifi-scan)
+        rx1950-wlan start >/dev/null; dev=$(wifi_iface); ip link set "$dev" up
+        iw dev "$dev" scan | sed -n 's/^[[:space:]]*SSID: //p' | sed '/^$/d' | sort -u ;;
+    wifi-status)
+        if dev=$(wifi_iface 2>/dev/null); then
+            iw dev "$dev" link 2>/dev/null | sed -n '1,4p'
+            ip -4 -o addr show dev "$dev" | awk '{print $4}'
+        else printf 'Radio is off\n'; fi ;;
+    wifi-open) write_network open "$2" ;;
+    wifi-psk) write_network psk "$2" "$3" ;;
+    wifi-disconnect) rx1950-wlan disconnect ;;
+    key-get)
+        grep -E "^${2}[[:space:]]+1[[:space:]]" "$key_file" 2>/dev/null |
+            head -1 | sed -E 's/^[^[:space:]]+[[:space:]]+1[[:space:]]+//' ;;
+    key-set)
+        key=${2:-}; command=${3:-}
+        case "$key" in KEY_POWER|KEY_F1|KEY_F2|KEY_F3|KEY_F4|KEY_F5) ;; *) exit 2;; esac
+        case "$command" in *'\n'*|*'\r'*) exit 2;; esac
+        install -d -m 0755 "$(dirname "$key_file")"
+        tmp="${key_file}.tmp.$$"; trap 'rm -f "$tmp"' EXIT HUP INT TERM
+        { grep -Ev "^${key}[[:space:]]" "$key_file" 2>/dev/null || true; [ -z "$command" ] || printf '%s 1 %s\n' "$key" "$command"; } > "$tmp"
+        mv "$tmp" "$key_file"; trap - EXIT HUP INT TERM ;;
+    key-reload) /etc/init.d/S10triggerhappy restart >/dev/null 2>&1 || true ;;
+    power-info)
+        ac=unknown; [ ! -r /sys/class/power_supply/ac/online ] || ac=$(cat /sys/class/power_supply/ac/online)
+        b=/sys/class/power_supply/main-battery
+        printf 'External power: %s\n' "$( [ "$ac" = 1 ] && printf connected || printf disconnected )"
+        for f in status capacity voltage_now current_now charge_now; do
+            [ -r "$b/$f" ] && printf '%s: %s\n' "$f" "$(cat "$b/$f")"
+        done ;;
+    blank-set)
+        case "${2:-}" in ''|*[!0-9]*) exit 2;; esac
+        printf 'BLANK_SECONDS=%s\n' "$2" > /etc/default/rx1950-power
+        if [ "$2" -eq 0 ]; then xset s off; else xset s "$2" "$2"; fi ;;
+    timezone-get) rx1950-timezone ;;
+    timezone) rx1950-timezone "$2" ;;
+    time-sync) rx1950-time-sync ;;
+    suspend) sync; printf mem > /sys/power/state ;;
+    reboot) sync; exec /sbin/reboot ;;
+    poweroff) sync; exec /sbin/poweroff ;;
+    calibrate) exec xinput_calibrator ;;
+    status)
+        uname -a; printf '\nMemory:\n'; free -h; printf '\nStorage:\n'; df -h / /mnt/data 2>/dev/null
+        printf '\nNetwork:\n'; ip -br addr 2>/dev/null || ip addr
+        printf '\nBattery and sensors:\n'; rx1950-sensors 2>&1 || true ;;
+    *) printf 'unknown control operation\n' >&2; exit 2 ;;
+esac

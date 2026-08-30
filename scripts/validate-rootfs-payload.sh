@@ -44,10 +44,23 @@ for path in \
     /usr/sbin/rx1950-settings \
     /usr/sbin/rx1950-wifi-ui \
     /usr/bin/rx1950-keyboard \
+    /usr/bin/rx1950-launch \
     /usr/bin/rx1950-settings-launcher \
     /usr/bin/rx1950-wifi-launcher \
     /usr/bin/dialog \
     /usr/bin/xterm \
+    /usr/bin/gpe-conf \
+    /usr/bin/xcalc \
+    /usr/bin/xset \
+    /usr/bin/leafpad \
+    /usr/sbin/thd \
+    /usr/sbin/rx1950-control \
+    /etc/default/triggerhappy \
+    /etc/default/rx1950-power \
+    /etc/default/rx1950-ui \
+    /etc/triggerhappy/triggers.d/rx1950.conf \
+    /usr/share/applications/rx1950-calculator.desktop \
+    /usr/share/applications/rx1950-editor.desktop \
     /usr/bin/mb-applet-menu-launcher \
     /usr/share/matchbox/vfolders/Root.directory \
     /usr/share/pixmaps/mbup.png \

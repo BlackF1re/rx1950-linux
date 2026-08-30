@@ -10,6 +10,9 @@ start_applet() {
 
 case "$1" in
     start)
+        MATCHBOX_THEME=MBOpus
+        [ ! -r /etc/default/rx1950-ui ] || . /etc/default/rx1950-ui
+        case "$MATCHBOX_THEME" in MBOpus|Default|blondie) ;; *) MATCHBOX_THEME=MBOpus;; esac
         attempts=0
         while [ ! -S /tmp/.X11-unix/X0 ] && [ "$attempts" -lt 10 ]; do
             sleep 1
@@ -19,7 +22,7 @@ case "$1" in
         # MBOpus has the compact high-contrast controls designed for a PDA.
         # The keyboard is deliberately not started here: the tray button owns
         # its lifetime so it consumes no RAM and no screen space while hidden.
-        matchbox-window-manager -theme MBOpus -use_titlebar yes \
+        matchbox-window-manager -theme "$MATCHBOX_THEME" -use_titlebar yes \
             -use_dialog_mode const-horiz -use_desktop_mode plain \
             >/var/log/matchbox-window-manager.log 2>&1 &
         matchbox-desktop >/var/log/matchbox-desktop.log 2>&1 &
@@ -33,6 +36,14 @@ case "$1" in
         start_applet mb-applet-launcher -l minisys.png rx1950-settings-launcher
         start_applet mb-applet-launcher -l matchbox-keyboard.png rx1950-keyboard
         start_applet mb-applet-clock
+        if [ -r /etc/default/rx1950-power ]; then
+            . /etc/default/rx1950-power
+            case "${BLANK_SECONDS:-60}" in
+                0) xset s off ;;
+                *[!0-9]*) xset s 60 60 ;;
+                *) xset s "$BLANK_SECONDS" "$BLANK_SECONDS" ;;
+            esac
+        fi
         ;;
     stop)
         killall matchbox-keyboard mb-applet-clock mb-applet-launcher \
