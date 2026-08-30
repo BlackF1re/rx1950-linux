@@ -115,7 +115,7 @@ source)
         BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
         BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
         BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
-        BR2_PACKAGE_MATCHBOX_COMMON=y BR2_PACKAGE_MATCHBOX_COMMON_PDA=y \
+        BR2_PACKAGE_RX1950_SHELL=y \
         BR2_PACKAGE_GPE_CONF_RX1950=y BR2_PACKAGE_TRIGGERHAPPY=y \
         BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XEDIT=y BR2_PACKAGE_XAPP_XSET=y \
         BR2_PACKAGE_DIALOG=y BR2_PACKAGE_XTERM=y; do
@@ -153,7 +153,10 @@ source)
     require_fragment 'echo none > "$LED/trigger"' "$blue" 'Blue LED cannot return to manual mode in diagnostic independent mode'
     require_fragment 'rx1950-wlan start historical' "$wlan_init" 'boot WLAN path does not follow the historical RX1950 wiring'
     require_fragment 'Xorg :0 -config /etc/X11/xorg.conf' "$xserver" 'Xorg framebuffer server is not started'
-    require_fragment 'mb-applet-menu-launcher' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'Matchbox application menu is not started'
+    require_fragment 'rx1950-shell' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'minimal PDA shell is not started'
+    if grep -Eq 'matchbox-(desktop|panel)|mb-applet-' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox"; then
+        die 'legacy multi-process Matchbox desktop stack is still started'
+    fi
     require_fragment 'MATCHBOX_THEME' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'persistent Matchbox theme selection is missing'
     require_fragment 'exec gpe-conf "$@"' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-settings-launcher" 'settings launcher does not open the graphical control center'
     require_fragment 'exec gpe-conf wifi' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" 'Wi-Fi launcher does not open the native graphical applet'
@@ -225,6 +228,7 @@ rootfs)
         BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
         BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
         BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
+        BR2_PACKAGE_RX1950_SHELL=y \
         BR2_PACKAGE_GPE_CONF_RX1950=y BR2_PACKAGE_TRIGGERHAPPY=y \
         BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XEDIT=y BR2_PACKAGE_XAPP_XSET=y; do
         require_line "$req" "$cfg" "generated rootfs dropped: $req"

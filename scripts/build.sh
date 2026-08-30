@@ -185,6 +185,12 @@ build_rootfs() {
     mkdir -p "${out}"
     make -C "${source}" O="${out}" BR2_EXTERNAL="${ROOT_DIR}/buildroot/external/rx1950" rx1950_defconfig
 
+    # Local packages are intentionally absent from the expensive Buildroot
+    # state key. Rebuild them on every invocation so source-only UI changes
+    # take seconds and can never be hidden by an otherwise valid cache hit.
+    make -C "${source}" O="${out}" \
+        gpe-conf-rx1950-dirclean rx1950-shell-dirclean
+
     make -C "${source}" O="${out}" -j"$(nproc)"
     cp "${out}/images/rootfs.ext2" "${OUTPUT_DIR}/rootfs.ext2"
     cp "${out}/.config" "${OUTPUT_DIR}/buildroot.config"

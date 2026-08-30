@@ -61,9 +61,7 @@ for path in \
     /etc/triggerhappy/triggers.d/rx1950.conf \
     /usr/share/applications/rx1950-calculator.desktop \
     /usr/share/applications/rx1950-editor.desktop \
-    /usr/bin/mb-applet-menu-launcher \
-    /usr/share/matchbox/vfolders/Root.directory \
-    /usr/share/pixmaps/mbup.png \
+    /usr/bin/rx1950-shell \
     /usr/share/applications/rx1950-settings.desktop \
     /usr/share/applications/rx1950-wifi.desktop \
     /usr/lib/rx1950/build-epoch \
@@ -130,8 +128,11 @@ grep -Fq 'lzo-rle' "${tmp}/S20zram" || die 'zram compressor is not lzo-rle'
 extract /etc/init.d/S48xserver "${tmp}/S48xserver"
 grep -Fq 'Xorg :0' "${tmp}/S48xserver" || die 'Xorg is not started at boot'
 extract /etc/init.d/S50matchbox "${tmp}/S50matchbox"
-grep -Fq 'mb-applet-menu-launcher' "${tmp}/S50matchbox" || die 'application menu applet is not started'
+grep -Fq 'rx1950-shell' "${tmp}/S50matchbox" || die 'minimal PDA shell is not started'
 grep -Fq 'rx1950-keyboard' "${tmp}/S50matchbox" || die 'keyboard tray toggle is not started'
+if grep -Eq 'matchbox-(desktop|panel)|mb-applet-' "${tmp}/S50matchbox"; then
+    die 'legacy multi-process Matchbox desktop stack is still started'
+fi
 if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${tmp}/S50matchbox"; then
     die 'on-screen keyboard is still started unconditionally'
 fi
