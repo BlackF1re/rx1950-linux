@@ -3,6 +3,18 @@
 
 set -euo pipefail
 
+# A non-login Git Bash started from PowerShell inherits Windows' OpenSSH ahead
+# of the MSYS tools. Keep one coherent POSIX toolset (and its path handling)
+# regardless of how the updater was launched.
+case $(uname -s) in
+    MINGW*|MSYS*)
+        PATH="/usr/bin:/bin:${PATH}"; export PATH
+        # Git for Windows 10.3 and Dropbear 2025.88 stall after exchanging
+        # banners on this ARM target. Windows' in-box OpenSSH interoperates.
+        ssh() { /c/WINDOWS/System32/OpenSSH/ssh.exe "$@"; }
+        ;;
+esac
+
 REPOSITORY=BlackF1re/rx1950-linux
 DEVICE=192.168.7.2
 BIND_ADDRESS=192.168.7.1
@@ -39,7 +51,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "${SOURCE}" ]] || { usage >&2; exit 2; }
 
-for command in gh plink pscp ssh scp ssh-keygen ssh-keyscan sha256sum xz awk; do
+for command in gh plink pscp ssh ssh-keygen sha256sum xz awk; do
     command -v "${command}" >/dev/null || die "missing host command: ${command}"
 done
 
@@ -96,12 +108,22 @@ fi
 # Pin the key actually presented on the dedicated cable before using the
 # factory engineering password to install our update-only transport key.
 known_hosts=${temporary}/known_hosts
-for _ in $(seq 1 30); do
-    ssh-keyscan -T 2 -t ed25519 "${DEVICE}" >"${known_hosts}" 2>/dev/null && break
-    sleep 2
-done
-[[ -s "${known_hosts}" ]] || die 'rx1950 SSH is not reachable over USB'
-fingerprint=$(ssh-keygen -lf "${known_hosts}" -E sha256 | awk '{print $2}')
+probe=$(plink -batch -ssh -pw "${PASSWORD}" root@"${DEVICE}" true 2>&1 || true)
+fingerprint=$(printf '%s\n' "${probe}" | awk '/fingerprint is:/{getline; print $NF; exit}')
+[[ "${fingerprint}" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] ||
+    die 'rx1950 SSH is not reachable over USB or its host key cannot be read'
+
+# ssh-keyscan cannot negotiate the KEX selected by Dropbear 2025.88. Record a
+# key with a credential-free normal handshake, then require it to match the
+# independently reported PuTTY fingerprint before sending the password.
+rm -f "${known_hosts}"
+ssh -o BatchMode=yes -o PreferredAuthentications=none \
+    -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${known_hosts}" \
+    -o ConnectTimeout=15 -o BindAddress="${BIND_ADDRESS}" \
+    root@"${DEVICE}" true </dev/null >/dev/null 2>&1 || true
+[[ -s "${known_hosts}" ]] || die 'cannot capture the rx1950 OpenSSH host key'
+openssh_fingerprint=$(ssh-keygen -lf "${known_hosts}" -E sha256 | awk '{print $2}')
+[[ "${openssh_fingerprint}" = "${fingerprint}" ]] || die 'SSH host-key probes disagree'
 printf 'Cable device host key: %s\n' "${fingerprint}"
 pscp -scp -batch -hostkey "${fingerprint}" -pw "${PASSWORD}" "${key}.pub" \
     "root@${DEVICE}:/tmp/rx1950_update.pub" >/dev/null
@@ -112,11 +134,11 @@ common_options=(-i "${key}" -o BatchMode=yes -o StrictHostKeyChecking=yes \
     -o UserKnownHostsFile="${known_hosts}" -o ConnectTimeout=5 \
     -o BindAddress="${BIND_ADDRESS}")
 ssh_options=("${common_options[@]}")
-# The target intentionally has no SFTP server. OpenSSH 9 defaults scp to
-# SFTP, so force its small legacy SCP protocol implementation.
-scp_options=(-O "${common_options[@]}")
 remote=(root@"${DEVICE}")
-ssh "${ssh_options[@]}" "${remote[@]}" 'test "$(cat /sys/class/power_supply/ac/online)" = 1' ||
+plink_options=(-batch -ssh -hostkey "${fingerprint}" -pw "${PASSWORD}")
+pscp_options=(-scp -batch -hostkey "${fingerprint}" -pw "${PASSWORD}")
+plink "${plink_options[@]}" "${remote[0]}" \
+    'test "$(cat /sys/class/power_supply/ac/online)" = 1' ||
     die 'external power is required for a whole-card update'
 
 printf 'Verified payload: %s (%s bytes raw)\n' "${image_name}" "${raw_size}"
@@ -126,30 +148,30 @@ if ! ${ASSUME_YES}; then
     [[ "${confirmation}" = FLASH ]] || die 'update cancelled'
 fi
 
-scp "${scp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
-scp "${scp_options[@]}" "${initramfs}" "${remote[0]}:/mnt/boot/recovery.cpio.gz"
-scp "${scp_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
-ssh "${ssh_options[@]}" "${remote[@]}" 'chmod 755 /tmp/kexec; sync'
+pscp "${pscp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
+pscp "${pscp_options[@]}" "${initramfs}" "${remote[0]}:/mnt/boot/recovery.cpio.gz"
+pscp "${pscp_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
+plink "${plink_options[@]}" "${remote[0]}" 'chmod 755 /tmp/kexec; sync'
 
 # Images installed before OTA support need one normal HaRET cycle to start a
 # kernel containing kexec. The WM Startup shortcut handles that cycle.
-if ! ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /sys/kernel/kexec_loaded'; then
+if ! plink "${plink_options[@]}" "${remote[0]}" 'test -e /sys/kernel/kexec_loaded'; then
     printf 'Bootstrapping the OTA-capable kernel through WM/HaRET...\n'
-    ssh "${ssh_options[@]}" "${remote[@]}" \
+    plink "${plink_options[@]}" "${remote[0]}" \
         'cp /mnt/boot/zImage /mnt/boot/zImage.previous; mv /mnt/boot/zImage.ota /mnt/boot/zImage; sync; reboot' || true
     for _ in $(seq 1 90); do
         sleep 2
-        if ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /sys/kernel/kexec_loaded' 2>/dev/null; then break; fi
+        if plink "${plink_options[@]}" "${remote[0]}" 'test -e /sys/kernel/kexec_loaded' 2>/dev/null; then break; fi
     done
-    ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /sys/kernel/kexec_loaded' ||
+    plink "${plink_options[@]}" "${remote[0]}" 'test -e /sys/kernel/kexec_loaded' ||
         die 'OTA kernel did not return; start HaRET manually or restore zImage.previous'
-    scp "${scp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
-    scp "${scp_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
-    ssh "${ssh_options[@]}" "${remote[@]}" 'chmod 755 /tmp/kexec'
+    pscp "${pscp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
+    pscp "${pscp_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
+    plink "${plink_options[@]}" "${remote[0]}" 'chmod 755 /tmp/kexec'
 fi
 
 printf 'Entering authenticated RAM recovery...\n'
-ssh "${ssh_options[@]}" "${remote[@]}" \
+plink "${plink_options[@]}" "${remote[0]}" \
     "/tmp/kexec -l /mnt/boot/zImage.ota --type=zImage --initrd=/mnt/boot/recovery.cpio.gz --append='rdinit=/init console=tty0 loglevel=4 consoleblank=0' && sync && /tmp/kexec -e" || true
 for _ in $(seq 1 60); do
     sleep 2
@@ -159,6 +181,9 @@ ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /etc/rx1950-recovery' ||
     die 'RAM recovery did not become reachable'
 
 printf 'Streaming and verifying the whole-card image...\n'
+# Dropbear on this ARM9 needs a short pause between OpenSSH sessions; without
+# it the next client can time out before the server banner is emitted.
+sleep 10
 xz --decompress --stdout "${image}" |
     ssh "${ssh_options[@]}" "${remote[@]}" "/usr/sbin/rx1950-recovery-write '${raw_size}' '${raw_sha}'" |
     tee "${temporary}/write.log"
