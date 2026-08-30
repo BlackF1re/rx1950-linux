@@ -16,6 +16,7 @@ XSERVER_XORG_SERVER_CONF_OPTS += \
 	--disable-dmx \
 	--disable-dpms \
 	--disable-dri2 \
+	--disable-dri3 \
 	--disable-libdrm \
 	--disable-record \
 	--disable-xace \
