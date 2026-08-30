@@ -212,7 +212,6 @@ validate_kernel_config() {
         'CONFIG_MACH_RX1950=y'
         'CONFIG_ATAGS=y'
         'CONFIG_UNUSED_BOARD_FILES=y'
-        'CONFIG_KEXEC=y'
         'CONFIG_BLK_DEV_INITRD=y'
         'CONFIG_RD_GZIP=y'
         'CONFIG_MODULES=y'
