@@ -40,6 +40,7 @@ source)
     blue_patch="${ROOT_DIR}/kernel/patches/0011-rx1950-decouple-blue-led.patch"
     unsafe_mmc="${ROOT_DIR}/kernel/patches/0011-s3cmci-fix-gpiod-return-handling.patch"
     nand_protect="${ROOT_DIR}/kernel/patches/0012-rx1950-protect-internal-nand.patch"
+    keyboard_xrender="${ROOT_DIR}/buildroot/external/rx1950/patches/matchbox-keyboard/0001-link-Xrender-in-cairo-mode.patch"
 
     for req in \
         CONFIG_S3C_ADC=y CONFIG_TOUCHSCREEN_S3C2410=y CONFIG_BATTERY_S3C_ADC=y \
@@ -116,7 +117,7 @@ source)
         BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
         BR2_PACKAGE_MATCHBOX_COMMON=y BR2_PACKAGE_MATCHBOX_COMMON_PDA=y \
         BR2_PACKAGE_GPE_CONF_RX1950=y BR2_PACKAGE_TRIGGERHAPPY=y \
-        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XSET=y BR2_PACKAGE_LEAFPAD=y \
+        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XEDIT=y BR2_PACKAGE_XAPP_XSET=y \
         BR2_PACKAGE_DIALOG=y BR2_PACKAGE_XTERM=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
     done
@@ -158,6 +159,8 @@ source)
     require_fragment 'exec gpe-conf wifi' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" 'Wi-Fi launcher does not open the native graphical applet'
     require_fragment 'key-reload)' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-control" 'button assignments are not reloaded atomically'
     require_fragment 'user root' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/default/triggerhappy" 'hardware button actions cannot control the root-owned PDA session'
+    require_fragment '$(PNG_LIBS) -lXrender' "$keyboard_xrender" 'Matchbox keyboard Cairo backend is not linked with Xrender'
+    if grep -Fq 'BR2_PACKAGE_LEAFPAD=y' "$rcfg"; then die 'unverifiable legacy Leafpad source must not be enabled'; fi
     if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox"; then
         die 'on-screen keyboard must not occupy the desktop at boot'
     fi
@@ -223,7 +226,7 @@ rootfs)
         BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
         BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
         BR2_PACKAGE_GPE_CONF_RX1950=y BR2_PACKAGE_TRIGGERHAPPY=y \
-        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XSET=y BR2_PACKAGE_LEAFPAD=y; do
+        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XEDIT=y BR2_PACKAGE_XAPP_XSET=y; do
         require_line "$req" "$cfg" "generated rootfs dropped: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
@@ -243,7 +246,7 @@ image)
         /usr/sbin/alsactl /usr/bin/speaker-test /usr/bin/xinput \
         /usr/bin/xinput_calibrator \
         /usr/bin/gpe-conf /usr/sbin/rx1950-control /usr/sbin/thd \
-        /usr/bin/xcalc /usr/bin/xset /usr/bin/leafpad /usr/bin/rx1950-launch \
+        /usr/bin/xcalc /usr/bin/xedit /usr/bin/xset /usr/bin/rx1950-launch \
         /etc/triggerhappy/triggers.d/rx1950.conf /etc/default/triggerhappy \
         /etc/default/rx1950-power /etc/default/rx1950-ui \
         /usr/share/applications/rx1950-calculator.desktop \

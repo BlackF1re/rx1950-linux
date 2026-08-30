@@ -218,7 +218,7 @@ static const char *key_actions[] = {
     "", "/usr/bin/rx1950-launch /usr/bin/gpe-conf",
     "/usr/bin/rx1950-launch /usr/bin/gpe-conf wifi",
     "/usr/bin/rx1950-launch /usr/bin/xcalc",
-    "/usr/bin/rx1950-launch /usr/bin/leafpad",
+    "/usr/bin/rx1950-launch /usr/bin/xedit",
     "/usr/bin/rx1950-launch /usr/bin/mb-applet-xterm-wrapper.sh",
     "/usr/bin/rx1950-keyboard toggle", "/usr/sbin/rx1950-control suspend", NULL
 };

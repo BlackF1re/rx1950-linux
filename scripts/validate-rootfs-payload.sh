@@ -52,7 +52,7 @@ for path in \
     /usr/bin/gpe-conf \
     /usr/bin/xcalc \
     /usr/bin/xset \
-    /usr/bin/leafpad \
+    /usr/bin/xedit \
     /usr/sbin/thd \
     /usr/sbin/rx1950-control \
     /etc/default/triggerhappy \

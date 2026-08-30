@@ -2,7 +2,7 @@
 Encoding=UTF-8
 Name=Text editor
 Comment=Edit text files
-Exec=leafpad
+Exec=xedit
 Icon=accessories-text-editor
 Terminal=false
 Type=Application
