@@ -154,7 +154,7 @@ source)
     require_fragment 'rx1950-wlan start historical' "$wlan_init" 'boot WLAN path does not follow the historical RX1950 wiring'
     require_fragment 'Xorg :0 -config /etc/X11/xorg.conf' "$xserver" 'Xorg framebuffer server is not started'
     require_fragment 'rx1950-shell' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'minimal PDA shell is not started'
-    if grep -Eq 'matchbox-(desktop|panel)|mb-applet-' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox"; then
+    if grep -Eq 'matchbox-(window-manager|desktop|panel)|mb-applet-' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox"; then
         die 'legacy multi-process Matchbox desktop stack is still started'
     fi
     require_fragment 'MATCHBOX_THEME' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'persistent Matchbox theme selection is missing'

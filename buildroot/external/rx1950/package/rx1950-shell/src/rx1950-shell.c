@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <dirent.h>
 #include <errno.h>
 #include <signal.h>
@@ -18,6 +19,8 @@
 #define PANEL_H 28
 #define MENU_W 168
 #define ITEM_H 34
+#define KEYBOARD_H 132
+#define MAX_CLIENTS 16
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 typedef struct {
@@ -41,12 +44,16 @@ static Window root, desktop, panel, menu_win;
 static GC gc;
 static XFontStruct *font;
 static Atom a_type, a_desktop, a_dock, a_strut, a_strut_partial, a_active, a_name;
-static Atom a_utf8, a_wm_delete;
+static Atom a_utf8, a_wm_delete, a_client_list, a_supported, a_supporting_wm;
 static unsigned long bg, panel_bg, tile, accent, fg, muted;
 static int menu_open;
 static char status_text[64];
 static char task_text[48];
 static Window active_client;
+static Window keyboard_client;
+static Window clients[MAX_CLIENTS];
+static size_t client_count;
+static int wm_error;
 
 static unsigned long color(const char *name, unsigned long fallback)
 {
@@ -172,20 +179,9 @@ static char *window_name(Window w)
 
 static void update_task(void)
 {
-    Atom actual;
-    int format;
-    unsigned long count, left;
-    unsigned char *data = NULL;
     char *name;
-    active_client = None;
     strcpy(task_text, "Home");
-    if (XGetWindowProperty(dpy, root, a_active, 0, 1, False, XA_WINDOW,
-                           &actual, &format, &count, &left, &data) == Success &&
-        data && count == 1)
-        active_client = *(Window *)data;
-    if (data) XFree(data);
-    if (!active_client || active_client == desktop || active_client == panel ||
-        active_client == menu_win) return;
+    if (!active_client) return;
     name = window_name(active_client);
     if (!name) return;
     snprintf(task_text, sizeof(task_text), "%.38s", name);
@@ -221,6 +217,136 @@ static void draw_panel(void)
     centered(panel, fg, 54, 100, 19, task_text);
     text_at(panel, fg, 160, 19, "Kbd");
     text_at(panel, fg, 207, 19, "X");
+}
+
+static void publish_clients(void)
+{
+    XChangeProperty(dpy, root, a_client_list, XA_WINDOW, 32, PropModeReplace,
+                    (unsigned char *)clients, (int)client_count);
+}
+
+static int client_index(Window w)
+{
+    size_t i;
+    for (i = 0; i < client_count; ++i) if (clients[i] == w) return (int)i;
+    return -1;
+}
+
+static void add_client(Window w)
+{
+    if (client_index(w) >= 0 || client_count == MAX_CLIENTS) return;
+    clients[client_count++] = w;
+    XSelectInput(dpy, w, PropertyChangeMask | StructureNotifyMask);
+    publish_clients();
+}
+
+static void remove_client(Window w)
+{
+    int index = client_index(w);
+    if (keyboard_client == w) {
+        keyboard_client = None;
+        return;
+    }
+    if (index < 0) return;
+    memmove(&clients[index], &clients[index + 1],
+            (client_count - (size_t)index - 1) * sizeof(clients[0]));
+    --client_count;
+    if (active_client == w) active_client = None;
+    publish_clients();
+    XChangeProperty(dpy, root, a_active, XA_WINDOW, 32, PropModeReplace,
+                    (unsigned char *)&active_client, 1);
+    update_task();
+    draw_panel();
+}
+
+static int is_keyboard(Window w)
+{
+    XClassHint hint;
+    char *name;
+    int result = 0;
+    memset(&hint, 0, sizeof(hint));
+    if (XGetClassHint(dpy, w, &hint)) {
+        if ((hint.res_name && (strstr(hint.res_name, "keyboard") ||
+                              strstr(hint.res_name, "Keyboard"))) ||
+            (hint.res_class && (strstr(hint.res_class, "keyboard") ||
+                               strstr(hint.res_class, "Keyboard"))))
+            result = 1;
+        if (hint.res_name) XFree(hint.res_name);
+        if (hint.res_class) XFree(hint.res_class);
+    }
+    if (result) return 1;
+    name = window_name(w);
+    if (name) {
+        result = strstr(name, "Keyboard") != NULL ||
+                 strstr(name, "keyboard") != NULL;
+        XFree(name);
+    }
+    return result;
+}
+
+static void activate_client(Window w)
+{
+    if (!w || client_index(w) < 0) return;
+    if (active_client && active_client != w) XUnmapWindow(dpy, active_client);
+    active_client = w;
+    XMoveResizeWindow(dpy, w, 0, 0, SCREEN_W, SCREEN_H - PANEL_H);
+    XMapRaised(dpy, w);
+    XRaiseWindow(dpy, panel);
+    if (keyboard_client) XRaiseWindow(dpy, keyboard_client);
+    XSetInputFocus(dpy, w, RevertToPointerRoot, CurrentTime);
+    XChangeProperty(dpy, root, a_active, XA_WINDOW, 32, PropModeReplace,
+                    (unsigned char *)&active_client, 1);
+    update_task();
+    draw_panel();
+}
+
+static void show_home(void)
+{
+    if (active_client) XUnmapWindow(dpy, active_client);
+    active_client = None;
+    XChangeProperty(dpy, root, a_active, XA_WINDOW, 32, PropModeReplace,
+                    (unsigned char *)&active_client, 1);
+    XMapWindow(dpy, desktop);
+    XRaiseWindow(dpy, panel);
+    update_task();
+    draw_panel();
+}
+
+static void map_requested(Window w)
+{
+    XWindowAttributes attrs;
+    if (!XGetWindowAttributes(dpy, w, &attrs)) return;
+    if (attrs.override_redirect) {
+        XMapRaised(dpy, w);
+        return;
+    }
+    if (is_keyboard(w)) {
+        keyboard_client = w;
+        XMoveResizeWindow(dpy, w, 0, SCREEN_H - PANEL_H - KEYBOARD_H,
+                          SCREEN_W, KEYBOARD_H);
+        XMapRaised(dpy, w);
+        return;
+    }
+    add_client(w);
+    activate_client(w);
+}
+
+static void configure_requested(XConfigureRequestEvent *e)
+{
+    XWindowChanges change;
+    if (e->window == keyboard_client || is_keyboard(e->window)) {
+        keyboard_client = e->window;
+        XMoveResizeWindow(dpy, e->window, 0, SCREEN_H - PANEL_H - KEYBOARD_H,
+                          SCREEN_W, KEYBOARD_H);
+    } else if (client_index(e->window) >= 0) {
+        XMoveResizeWindow(dpy, e->window, 0, 0, SCREEN_W, SCREEN_H - PANEL_H);
+    } else {
+        change.x = e->x; change.y = e->y;
+        change.width = e->width; change.height = e->height;
+        change.border_width = e->border_width;
+        change.sibling = e->above; change.stack_mode = e->detail;
+        XConfigureWindow(dpy, e->window, (unsigned int)e->value_mask, &change);
+    }
 }
 
 static void draw_menu(void)
@@ -276,8 +402,8 @@ static void handle_click(XButtonEvent *e)
     if (e->window == panel) {
         if (e->x < 52) toggle_menu();
         else if (e->x < 154) {
-            if (active_client) XIconifyWindow(dpy, active_client, screen_no);
-            XMapRaised(dpy, desktop);
+            if (active_client) show_home();
+            else if (client_count) activate_client(clients[client_count - 1]);
         } else if (e->x < 198) spawn("rx1950-keyboard toggle");
         else close_active();
     } else if (e->window == menu_win) {
@@ -293,7 +419,8 @@ static void handle_click(XButtonEvent *e)
 
 static int ignore_x_error(Display *display, XErrorEvent *error)
 {
-    (void)display; (void)error;
+    (void)display;
+    if (error->error_code == BadAccess) wm_error = 1;
     return 0;
 }
 
@@ -331,6 +458,18 @@ int main(void)
     a_name = XInternAtom(dpy, "_NET_WM_NAME", False);
     a_utf8 = XInternAtom(dpy, "UTF8_STRING", False);
     a_wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
+    a_client_list = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
+    a_supported = XInternAtom(dpy, "_NET_SUPPORTED", False);
+    a_supporting_wm = XInternAtom(dpy, "_NET_SUPPORTING_WM_CHECK", False);
+
+    XSelectInput(dpy, root, SubstructureRedirectMask | SubstructureNotifyMask |
+                 PropertyChangeMask);
+    XSync(dpy, False);
+    if (wm_error) {
+        fprintf(stderr, "another window manager owns display %s\n",
+                DisplayString(dpy));
+        return 3;
+    }
 
     desktop = XCreateSimpleWindow(dpy, root, 0, 0, SCREEN_W, SCREEN_H - PANEL_H,
                                   0, bg, bg);
@@ -355,7 +494,20 @@ int main(void)
                     PropModeReplace, (unsigned char *)strut_partial, 12);
     XStoreName(dpy, desktop, "rx1950 Home");
     XStoreName(dpy, panel, "rx1950 Panel");
-    XSelectInput(dpy, root, PropertyChangeMask);
+    {
+        Atom supported[] = { a_type, a_active, a_client_list, a_supporting_wm };
+        const char wm_name[] = "rx1950-shell";
+        XChangeProperty(dpy, root, a_supported, XA_ATOM, 32, PropModeReplace,
+                        (unsigned char *)supported, (int)ARRAY_SIZE(supported));
+        XChangeProperty(dpy, root, a_supporting_wm, XA_WINDOW, 32,
+                        PropModeReplace, (unsigned char *)&panel, 1);
+        XChangeProperty(dpy, panel, a_supporting_wm, XA_WINDOW, 32,
+                        PropModeReplace, (unsigned char *)&panel, 1);
+        XChangeProperty(dpy, panel, a_name, a_utf8, 8, PropModeReplace,
+                        (const unsigned char *)wm_name,
+                        (int)sizeof(wm_name) - 1);
+        publish_clients();
+    }
     XSelectInput(dpy, desktop, ExposureMask | ButtonPressMask);
     XSelectInput(dpy, panel, ExposureMask | ButtonPressMask);
     XSelectInput(dpy, menu_win, ExposureMask | ButtonPressMask);
@@ -372,8 +524,10 @@ int main(void)
         struct timeval timeout = { 15, 0 };
         FD_ZERO(&fds);
         FD_SET(xfd, &fds);
-        if (select(xfd + 1, &fds, NULL, NULL, &timeout) < 0 && errno != EINTR)
+        if (select(xfd + 1, &fds, NULL, NULL, &timeout) < 0) {
+            if (errno == EINTR) continue;
             break;
+        }
         if (!FD_ISSET(xfd, &fds)) {
             update_status();
             update_task();
@@ -389,8 +543,17 @@ int main(void)
                 else if (event.xexpose.window == menu_win) draw_menu();
             } else if (event.type == ButtonPress) {
                 handle_click(&event.xbutton);
+            } else if (event.type == MapRequest) {
+                map_requested(event.xmaprequest.window);
+            } else if (event.type == ConfigureRequest) {
+                configure_requested(&event.xconfigurerequest);
+            } else if (event.type == DestroyNotify) {
+                remove_client(event.xdestroywindow.window);
+            } else if (event.type == UnmapNotify &&
+                       event.xunmap.window == keyboard_client) {
+                keyboard_client = None;
             } else if (event.type == PropertyNotify &&
-                       event.xproperty.atom == a_active) {
+                       event.xproperty.window == active_client) {
                 update_task();
                 draw_panel();
             }

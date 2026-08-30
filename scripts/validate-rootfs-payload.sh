@@ -130,7 +130,7 @@ grep -Fq 'Xorg :0' "${tmp}/S48xserver" || die 'Xorg is not started at boot'
 extract /etc/init.d/S50matchbox "${tmp}/S50matchbox"
 grep -Fq 'rx1950-shell' "${tmp}/S50matchbox" || die 'minimal PDA shell is not started'
 grep -Fq 'rx1950-keyboard' "${tmp}/S50matchbox" || die 'keyboard tray toggle is not started'
-if grep -Eq 'matchbox-(desktop|panel)|mb-applet-' "${tmp}/S50matchbox"; then
+if grep -Eq 'matchbox-(window-manager|desktop|panel)|mb-applet-' "${tmp}/S50matchbox"; then
     die 'legacy multi-process Matchbox desktop stack is still started'
 fi
 if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${tmp}/S50matchbox"; then

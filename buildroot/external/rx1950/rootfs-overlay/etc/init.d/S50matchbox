@@ -15,11 +15,8 @@ case "$1" in
             attempts=$((attempts + 1))
         done
         [ -S /tmp/.X11-unix/X0 ] || exit 0
-        # One WM and one Xlib shell provide the whole resident session.
-        # The keyboard remains on-demand.
-        matchbox-window-manager -theme "$MATCHBOX_THEME" -use_titlebar yes \
-            -use_dialog_mode const-horiz -use_desktop_mode plain \
-            >/var/log/matchbox-window-manager.log 2>&1 &
+        # The Xlib shell is also the window manager. The keyboard remains
+        # on-demand; no desktop, panel, applet or second WM stays resident.
         rx1950-shell >/var/log/rx1950-shell.log 2>&1 &
         if [ -r /etc/default/rx1950-power ]; then
             . /etc/default/rx1950-power
@@ -31,7 +28,6 @@ case "$1" in
         fi
         ;;
     stop)
-        killall matchbox-keyboard rx1950-shell matchbox-window-manager \
-            2>/dev/null || true
+        killall matchbox-keyboard rx1950-shell 2>/dev/null || true
         ;;
 esac
