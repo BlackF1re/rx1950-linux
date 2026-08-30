@@ -19,7 +19,7 @@ REPOSITORY=BlackF1re/rx1950-linux
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE=192.168.7.2
 BIND_ADDRESS=192.168.7.1
-PASSWORD=rx1950
+PASSWORD=${RX1950_PASSWORD-rx1950}
 SOURCE=
 VALUE=
 ASSUME_YES=false
@@ -126,9 +126,28 @@ ssh -o BatchMode=yes -o PreferredAuthentications=none \
 openssh_fingerprint=$(ssh-keygen -lf "${known_hosts}" -E sha256 | awk '{print $2}')
 [[ "${openssh_fingerprint}" = "${fingerprint}" ]] || die 'SSH host-key probes disagree'
 printf 'Cable device host key: %s\n' "${fingerprint}"
-pscp -scp -batch -hostkey "${fingerprint}" -pw "${PASSWORD}" "${key}.pub" \
+
+# Development images used "rx1950", while a freshly assembled image has the
+# intentionally blank local root password. Try the configured/current value
+# first, then the factory image value, so a successful update cannot lock out
+# the next cable update. RX1950_PASSWORD overrides the first candidate.
+device_password=
+authenticated=false
+for candidate in "${PASSWORD}" ''; do
+    [[ "${authenticated}" = false ]] || break
+    [[ -n "${device_password}" && "${candidate}" = "${device_password}" ]] && continue
+    if plink -batch -ssh -hostkey "${fingerprint}" -pw "${candidate}" \
+        root@"${DEVICE}" true >/dev/null 2>&1; then
+        device_password=${candidate}
+        authenticated=true
+    fi
+done
+[[ "${authenticated}" = true ]] ||
+    die 'neither the configured nor the fresh-image root password was accepted'
+
+pscp -scp -batch -hostkey "${fingerprint}" -pw "${device_password}" "${key}.pub" \
     "root@${DEVICE}:/tmp/rx1950_update.pub" >/dev/null
-plink -batch -hostkey "${fingerprint}" -pw "${PASSWORD}" root@"${DEVICE}" \
+plink -batch -hostkey "${fingerprint}" -pw "${device_password}" root@"${DEVICE}" \
     'mkdir -p /root/.ssh; chmod 700 /root/.ssh; touch /root/.ssh/authorized_keys; grep -qxF "$(cat /tmp/rx1950_update.pub)" /root/.ssh/authorized_keys || cat /tmp/rx1950_update.pub >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys; rm -f /tmp/rx1950_update.pub'
 
 common_options=(-i "${key}" -o BatchMode=yes -o StrictHostKeyChecking=yes \
@@ -136,8 +155,8 @@ common_options=(-i "${key}" -o BatchMode=yes -o StrictHostKeyChecking=yes \
     -o BindAddress="${BIND_ADDRESS}")
 ssh_options=("${common_options[@]}")
 remote=(root@"${DEVICE}")
-plink_options=(-batch -ssh -hostkey "${fingerprint}" -pw "${PASSWORD}")
-pscp_options=(-scp -batch -hostkey "${fingerprint}" -pw "${PASSWORD}")
+plink_options=(-batch -ssh -hostkey "${fingerprint}" -pw "${device_password}")
+pscp_options=(-scp -batch -hostkey "${fingerprint}" -pw "${device_password}")
 plink "${plink_options[@]}" "${remote[0]}" \
     'test "$(cat /sys/class/power_supply/ac/online)" = 1' ||
     die 'external power is required for a whole-card update'
@@ -161,7 +180,7 @@ for _ in $(seq 1 120); do
     if ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /etc/rx1950-recovery' 2>/dev/null; then break; fi
 done
 ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /etc/rx1950-recovery' ||
-    die 'RAM recovery did not become reachable; restore startup.normal.txt as startup.txt from Windows Mobile'
+    die 'RAM recovery did not become reachable; its unattended fallback will reboot to the normal image'
 
 printf 'Streaming and verifying the whole-card image...\n'
 # Dropbear on this ARM9 needs a short pause between OpenSSH sessions; without

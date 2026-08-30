@@ -14,6 +14,11 @@ mount -t proc proc /proc || rescue_shell 'cannot mount proc'
 mount -t sysfs sysfs /sys || rescue_shell 'cannot mount sysfs'
 mkdir -p /oldroot /root/.ssh /etc/dropbear /var/run
 
+# Recovery is deliberately unattended. If the host disappears before it can
+# finish (bad cable, suspended laptop, failed SSH), return to WM and the normal
+# HaRET script instead of waiting forever for somebody to press reset.
+( sleep 2700; reboot -f ) &
+
 # The updater replaces startup.txt only for this HaRET boot. Restore the normal
 # script before touching the image so a failed/cancelled update remains
 # recoverable with an ordinary reset.

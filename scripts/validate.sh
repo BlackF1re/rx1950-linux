@@ -158,6 +158,7 @@ case "${1:-source}" in
     test -x "${ROOT_DIR}/scripts/build-recovery.sh"
     test -x "${ROOT_DIR}/scripts/recovery-init.sh"
     test -x "${ROOT_DIR}/scripts/recovery-write.sh"
+    grep -Fq '( sleep 2700; reboot -f ) &' "${ROOT_DIR}/scripts/recovery-init.sh"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
     grep -qx 'set INITRD recovery.cpio.gz' "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
     grep -qx 'CONFIG_TTY=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
