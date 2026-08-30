@@ -14,6 +14,17 @@ mount -t proc proc /proc || rescue_shell 'cannot mount proc'
 mount -t sysfs sysfs /sys || rescue_shell 'cannot mount sysfs'
 mkdir -p /oldroot /root/.ssh /etc/dropbear /var/run
 
+# The updater replaces startup.txt only for this HaRET boot. Restore the normal
+# script before touching the image so a failed/cancelled update remains
+# recoverable with an ordinary reset.
+mkdir -p /boot
+mount -t vfat -o rw /dev/mmcblk0p1 /boot || rescue_shell 'cannot mount boot partition'
+if [ -s /boot/startup.normal.txt ]; then
+    mv /boot/startup.normal.txt /boot/startup.txt || rescue_shell 'cannot restore normal HaRET script'
+    sync
+fi
+umount /boot || rescue_shell 'boot partition is still busy'
+
 # Reuse the installed system identity without leaving its filesystem mounted
 # while the updater overwrites the card.
 mount -t ext4 -o ro /dev/mmcblk0p2 /oldroot || rescue_shell 'cannot read installed rootfs'

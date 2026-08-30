@@ -386,11 +386,6 @@ assemble_image() {
     [[ -f "${OUTPUT_DIR}/kernel-modules.tar" ]] || die "kernel module bundle is not available"
     [[ -f "${OUTPUT_DIR}/rootfs.ext2" ]] || die "root filesystem artifact is not available"
     [[ -f "${OUTPUT_DIR}/recovery.cpio.gz" ]] || die "cable-update recovery is not available"
-    # actions/download-artifact deliberately does not preserve Unix mode bits.
-    # The payload is copied to the FAT boot partition and executed only after
-    # the updater installs it with mode 0755, so existence/non-emptiness is the
-    # correct hand-off check here (its checksum was verified by the workflow).
-    [[ -s "${OUTPUT_DIR}/kexec" ]] || die "standalone kexec helper is not available"
     validate_zimage_placement "${OUTPUT_DIR}/zImage"
 
     local haret bootfs image root_start rootfs_size image_size haret_log_trigger
@@ -429,7 +424,7 @@ assemble_image() {
     xz --keep --force --threads=1 --check=crc32 "${image}"
     (
         cd "${OUTPUT_DIR}"
-        sha256sum "${IMAGE_NAME}.img" "${IMAGE_NAME}.img.xz" zImage recovery.cpio.gz kexec > SHA256SUMS
+        sha256sum "${IMAGE_NAME}.img" "${IMAGE_NAME}.img.xz" zImage recovery.cpio.gz > SHA256SUMS
     )
     {
         printf 'build=%s\n' "${BUILD_ID:-local}"

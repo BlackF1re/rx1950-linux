@@ -15,11 +15,10 @@ tools/update-rx1950.sh --run ACTIONS_RUN_ID
 ```
 
 The updater verifies the published compressed image, boots an authenticated
-RAM recovery through `kexec`, unmounts the SD root, streams the raw image over
+RAM recovery through the normal WM/HaRET boot path, unmounts the SD root, streams the raw image over
 SSH, and verifies the bytes read back from the card. External power is
-mandatory. Images predating OTA support need one automatic WM/HaRET bootstrap
-cycle; install the HaRET shortcut in `\Windows\Startup` (localized WM images
-may call this folder `\Windows\Автозагрузка`).
+mandatory. Install the HaRET shortcut in `\Windows\Startup`; localized WM
+images may call this folder `\Windows\Автозагрузка`.
 
 Linux example:
 

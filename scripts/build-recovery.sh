@@ -11,8 +11,6 @@ OUTPUT="${2:-${ROOT_DIR}/output/recovery.cpio.gz}"
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 [[ -x "${TARGET_DIR}/bin/busybox" ]] || die 'Buildroot BusyBox is unavailable'
 [[ -x "${TARGET_DIR}/usr/sbin/dropbear" ]] || die 'Buildroot Dropbear is unavailable'
-[[ -x "${TARGET_DIR}/usr/sbin/kexec" || -x "${TARGET_DIR}/sbin/kexec" ]] ||
-    die 'Buildroot kexec is unavailable'
 
 work="$(mktemp -d)"
 trap 'rm -rf -- "${work}"' EXIT
@@ -40,7 +38,7 @@ for binary in "${TARGET_DIR}/bin/busybox" "${TARGET_DIR}/usr/sbin/dropbear"; do
         sed -n 's/.*Shared library: \[\([^]]*\)\].*/\1/p')
 done
 
-for applet in awk cat cp dd grep head id ip mkdir mount reboot setsid sh sha256sum sleep sync umount; do
+for applet in awk cat cp dd grep head id ip mkdir mount mv reboot setsid sh sha256sum sleep sync umount; do
     ln -s busybox "${root}/bin/${applet}"
 done
 ln -s ../../bin/busybox "${root}/usr/sbin/dropbearkey"
@@ -63,8 +61,4 @@ mkdir -p "$(dirname "${OUTPUT}")"
         gzip -n -9 > "${OUTPUT}"
 )
 
-kexec_source="${TARGET_DIR}/usr/sbin/kexec"
-[[ -x "${kexec_source}" ]] || kexec_source="${TARGET_DIR}/sbin/kexec"
-cp "${kexec_source}" "$(dirname "${OUTPUT}")/kexec"
-chmod 0755 "$(dirname "${OUTPUT}")/kexec"
 printf 'recovery initramfs: %s bytes\n' "$(stat -c '%s' "${OUTPUT}")"

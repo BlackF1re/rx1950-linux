@@ -16,6 +16,7 @@ case $(uname -s) in
 esac
 
 REPOSITORY=BlackF1re/rx1950-linux
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE=192.168.7.2
 BIND_ADDRESS=192.168.7.1
 PASSWORD=rx1950
@@ -73,7 +74,7 @@ case "${SOURCE}" in
         [[ "${SOURCE}" = release ]] || tag=$(gh release view --repo "${REPOSITORY}" --json tagName --jq .tagName)
         gh release download "${tag}" --repo "${REPOSITORY}" --dir "${payload}" \
             --pattern '*.img.xz' --pattern SHA256SUMS --pattern zImage \
-            --pattern recovery.cpio.gz --pattern kexec
+            --pattern recovery.cpio.gz
         ;;
     dir)
         payload=$(cd "${VALUE}" && pwd)
@@ -84,9 +85,9 @@ image=$(find "${payload}" -maxdepth 2 -type f -name 'rx1950-linux-*.img.xz' -pri
 checksums=$(find "${payload}" -maxdepth 2 -type f -name SHA256SUMS -print -quit)
 kernel=$(find "${payload}" -maxdepth 2 -type f -name zImage -print -quit)
 initramfs=$(find "${payload}" -maxdepth 2 -type f -name recovery.cpio.gz -print -quit)
-kexec=$(find "${payload}" -maxdepth 2 -type f -name kexec -print -quit)
-[[ -s "${image}" && -s "${checksums}" && -s "${kernel}" && -s "${initramfs}" && -s "${kexec}" ]] ||
-    die 'payload is incomplete (image, checksums, kernel, recovery and kexec are required)'
+recovery_startup=${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt
+[[ -s "${image}" && -s "${checksums}" && -s "${kernel}" && -s "${initramfs}" && -s "${recovery_startup}" ]] ||
+    die 'payload is incomplete (image, checksums, kernel and recovery are required)'
 
 image_name=$(basename "${image}")
 raw_name=${image_name%.xz}
@@ -150,35 +151,17 @@ fi
 
 pscp "${pscp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
 pscp "${pscp_options[@]}" "${initramfs}" "${remote[0]}:/mnt/boot/recovery.cpio.gz"
-pscp "${pscp_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
-plink "${plink_options[@]}" "${remote[0]}" 'chmod 755 /tmp/kexec; sync'
+pscp "${pscp_options[@]}" "${recovery_startup}" "${remote[0]}:/mnt/boot/startup.update"
 
-# Images installed before OTA support need one normal HaRET cycle to start a
-# kernel containing kexec. The WM Startup shortcut handles that cycle.
-if ! plink "${plink_options[@]}" "${remote[0]}" 'test -e /sys/kernel/kexec_loaded'; then
-    printf 'Bootstrapping the OTA-capable kernel through WM/HaRET...\n'
-    plink "${plink_options[@]}" "${remote[0]}" \
-        'cp /mnt/boot/zImage /mnt/boot/zImage.previous; mv /mnt/boot/zImage.ota /mnt/boot/zImage; sync; reboot' || true
-    for _ in $(seq 1 90); do
-        sleep 2
-        if plink "${plink_options[@]}" "${remote[0]}" 'test -e /sys/kernel/kexec_loaded' 2>/dev/null; then break; fi
-    done
-    plink "${plink_options[@]}" "${remote[0]}" 'test -e /sys/kernel/kexec_loaded' ||
-        die 'OTA kernel did not return; start HaRET manually or restore zImage.previous'
-    pscp "${pscp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
-    pscp "${pscp_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
-    plink "${plink_options[@]}" "${remote[0]}" 'chmod 755 /tmp/kexec'
-fi
-
-printf 'Entering authenticated RAM recovery...\n'
+printf 'Entering authenticated RAM recovery through WM/HaRET...\n'
 plink "${plink_options[@]}" "${remote[0]}" \
-    "/tmp/kexec -l /mnt/boot/zImage.ota --type=zImage --initrd=/mnt/boot/recovery.cpio.gz --append='rdinit=/init console=tty0 loglevel=4 consoleblank=0' && sync && /tmp/kexec -e" || true
-for _ in $(seq 1 60); do
+    'cp /mnt/boot/startup.txt /mnt/boot/startup.normal.txt && mv /mnt/boot/startup.update /mnt/boot/startup.txt && sync && reboot' || true
+for _ in $(seq 1 120); do
     sleep 2
     if ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /etc/rx1950-recovery' 2>/dev/null; then break; fi
 done
 ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /etc/rx1950-recovery' ||
-    die 'RAM recovery did not become reachable'
+    die 'RAM recovery did not become reachable; restore startup.normal.txt as startup.txt from Windows Mobile'
 
 printf 'Streaming and verifying the whole-card image...\n'
 # Dropbear on this ARM9 needs a short pause between OpenSSH sessions; without

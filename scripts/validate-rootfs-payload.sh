@@ -55,8 +55,6 @@ for path in \
     /usr/bin/xedit \
     /usr/sbin/thd \
     /usr/sbin/rx1950-control \
-    /usr/sbin/rx1950-enter-recovery \
-    /usr/sbin/kexec \
     /etc/default/triggerhappy \
     /etc/default/rx1950-power \
     /etc/default/rx1950-ui \
