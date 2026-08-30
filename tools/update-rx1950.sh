@@ -103,13 +103,18 @@ done
 [[ -s "${known_hosts}" ]] || die 'rx1950 SSH is not reachable over USB'
 fingerprint=$(ssh-keygen -lf "${known_hosts}" -E sha256 | awk '{print $2}')
 printf 'Cable device host key: %s\n' "${fingerprint}"
-pscp -batch -hostkey "${fingerprint}" -pw "${PASSWORD}" "${key}.pub" \
+pscp -scp -batch -hostkey "${fingerprint}" -pw "${PASSWORD}" "${key}.pub" \
     "root@${DEVICE}:/tmp/rx1950_update.pub" >/dev/null
 plink -batch -hostkey "${fingerprint}" -pw "${PASSWORD}" root@"${DEVICE}" \
     'mkdir -p /root/.ssh; chmod 700 /root/.ssh; touch /root/.ssh/authorized_keys; grep -qxF "$(cat /tmp/rx1950_update.pub)" /root/.ssh/authorized_keys || cat /tmp/rx1950_update.pub >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys; rm -f /tmp/rx1950_update.pub'
 
-ssh_options=(-i "${key}" -o BatchMode=yes -o StrictHostKeyChecking=yes \
-    -o UserKnownHostsFile="${known_hosts}" -o ConnectTimeout=5 -b "${BIND_ADDRESS}")
+common_options=(-i "${key}" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile="${known_hosts}" -o ConnectTimeout=5 \
+    -o BindAddress="${BIND_ADDRESS}")
+ssh_options=("${common_options[@]}")
+# The target intentionally has no SFTP server. OpenSSH 9 defaults scp to
+# SFTP, so force its small legacy SCP protocol implementation.
+scp_options=(-O "${common_options[@]}")
 remote=(root@"${DEVICE}")
 ssh "${ssh_options[@]}" "${remote[@]}" 'test "$(cat /sys/class/power_supply/ac/online)" = 1' ||
     die 'external power is required for a whole-card update'
@@ -121,9 +126,9 @@ if ! ${ASSUME_YES}; then
     [[ "${confirmation}" = FLASH ]] || die 'update cancelled'
 fi
 
-scp "${ssh_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
-scp "${ssh_options[@]}" "${initramfs}" "${remote[0]}:/mnt/boot/recovery.cpio.gz"
-scp "${ssh_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
+scp "${scp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
+scp "${scp_options[@]}" "${initramfs}" "${remote[0]}:/mnt/boot/recovery.cpio.gz"
+scp "${scp_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
 ssh "${ssh_options[@]}" "${remote[@]}" 'chmod 755 /tmp/kexec; sync'
 
 # Images installed before OTA support need one normal HaRET cycle to start a
@@ -138,8 +143,8 @@ if ! ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /sys/kernel/kexec_loaded'; 
     done
     ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /sys/kernel/kexec_loaded' ||
         die 'OTA kernel did not return; start HaRET manually or restore zImage.previous'
-    scp "${ssh_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
-    scp "${ssh_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
+    scp "${scp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
+    scp "${scp_options[@]}" "${kexec}" "${remote[0]}:/tmp/kexec"
     ssh "${ssh_options[@]}" "${remote[@]}" 'chmod 755 /tmp/kexec'
 fi
 
