@@ -144,7 +144,7 @@ jobs:
           bash scripts/validate-rootfs-payload.sh output/rootfs.ext2
           bash scripts/validate-opkg-feed.sh rootfs output/rootfs.ext2
       - name: Record root filesystem digest
-        run: sha256sum output/rootfs.ext2 output/buildroot.config > output/rootfs.SHA256SUMS
+        run: sha256sum output/rootfs.ext2 output/buildroot.config output/recovery.cpio.gz output/kexec > output/rootfs.SHA256SUMS
       - name: Save reusable Buildroot state
         if: always() && steps.rootfs-build.outcome == 'success' && steps.rootfs-validate.outcome == 'success' && steps.rootfs-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -172,6 +172,8 @@ jobs:
             output/rootfs.ext2
             output/buildroot.config
             output/rootfs.SHA256SUMS
+            output/recovery.cpio.gz
+            output/kexec
           if-no-files-found: error
           compression-level: 0
       - uses: actions/upload-artifact@v4
@@ -251,12 +253,13 @@ jobs:
         with:
           name: rx1950-linux-${{ needs.plan.outputs.id }}
           path: |
-            output/rx1950-linux-${{ needs.plan.outputs.version }}.img
             output/rx1950-linux-${{ needs.plan.outputs.version }}.img.xz
             output/SHA256SUMS
             output/provenance.txt
             output/zImage
             output/kernel-modules.tar
+            output/recovery.cpio.gz
+            output/kexec
             board/hp_rx1950/startup.txt
           if-no-files-found: error
           compression-level: 0
@@ -291,8 +294,10 @@ jobs:
           provenance="$(find release -type f -name provenance.txt -print -quit)"
           kernel="$(find release -type f -name zImage -print -quit)"
           modules="$(find release -type f -name kernel-modules.tar -print -quit)"
+          recovery="$(find release -type f -name recovery.cpio.gz -print -quit)"
+          kexec="$(find release -type f -name kexec -print -quit)"
           startup="$(find release -type f -name startup.txt -print -quit)"
-          test -n "$image" && test -n "$checksums" && test -n "$provenance" && test -n "$kernel" && test -n "$modules" && test -n "$startup"
+          test -n "$image" && test -n "$checksums" && test -n "$provenance" && test -n "$kernel" && test -n "$modules" && test -n "$recovery" && test -n "$kexec" && test -n "$startup"
 
           mapfile -t package_assets < <(find release/packages -maxdepth 1 -type f -print | LC_ALL=C sort)
           test "${#package_assets[@]}" -gt 0
@@ -301,7 +306,7 @@ jobs:
 
           gh release create "$VERSION" \
             "$image#Primary SD-card image" \
-            "$checksums" "$provenance" "$kernel" "$modules" "$startup" \
+            "$checksums" "$provenance" "$kernel" "$modules" "$recovery" "$kexec" "$startup" \
             "${package_assets[@]}" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "rx1950-linux $VERSION" --generate-notes

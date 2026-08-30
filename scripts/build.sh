@@ -198,6 +198,7 @@ build_rootfs() {
     # input. Normalize the exported config so identical source trees compare
     # byte-for-byte even when GitHub represents them with different commits.
     sed -i -E 's/^BR2_EXTERNAL_RX1950_VERSION=.*/BR2_EXTERNAL_RX1950_VERSION=""/' "${OUTPUT_DIR}/buildroot.config"
+    "${ROOT_DIR}/scripts/build-recovery.sh" "${out}/target" "${OUTPUT_DIR}/recovery.cpio.gz"
 }
 
 validate_kernel_config() {
@@ -211,6 +212,9 @@ validate_kernel_config() {
         'CONFIG_MACH_RX1950=y'
         'CONFIG_ATAGS=y'
         'CONFIG_UNUSED_BOARD_FILES=y'
+        'CONFIG_KEXEC=y'
+        'CONFIG_BLK_DEV_INITRD=y'
+        'CONFIG_RD_GZIP=y'
         'CONFIG_MODULES=y'
         'CONFIG_FW_LOADER=y'
         'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"'
@@ -381,6 +385,8 @@ assemble_image() {
     [[ -f "${OUTPUT_DIR}/zImage" ]] || die "kernel artifact is not available"
     [[ -f "${OUTPUT_DIR}/kernel-modules.tar" ]] || die "kernel module bundle is not available"
     [[ -f "${OUTPUT_DIR}/rootfs.ext2" ]] || die "root filesystem artifact is not available"
+    [[ -f "${OUTPUT_DIR}/recovery.cpio.gz" ]] || die "cable-update recovery is not available"
+    [[ -x "${OUTPUT_DIR}/kexec" ]] || die "standalone kexec helper is not available"
     validate_zimage_placement "${OUTPUT_DIR}/zImage"
 
     local haret bootfs image root_start rootfs_size image_size haret_log_trigger
@@ -399,6 +405,7 @@ assemble_image() {
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/startup.txt" ::startup.txt
     mcopy -i "${bootfs}" "${OUTPUT_DIR}/zImage" ::zImage
     mcopy -i "${bootfs}" "${OUTPUT_DIR}/kernel-modules.tar" ::kernel-modules.tar
+    mcopy -i "${bootfs}" "${OUTPUT_DIR}/recovery.cpio.gz" ::recovery.cpio.gz
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/README.txt" ::README.txt
 
     # Verify without changing last-check timestamps or other ext4 metadata.
@@ -418,7 +425,7 @@ assemble_image() {
     xz --keep --force --threads=1 --check=crc32 "${image}"
     (
         cd "${OUTPUT_DIR}"
-        sha256sum "${IMAGE_NAME}.img" "${IMAGE_NAME}.img.xz" > SHA256SUMS
+        sha256sum "${IMAGE_NAME}.img" "${IMAGE_NAME}.img.xz" zImage recovery.cpio.gz kexec > SHA256SUMS
     )
     {
         printf 'build=%s\n' "${BUILD_ID:-local}"

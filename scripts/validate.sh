@@ -153,6 +153,14 @@ case "${1:-source}" in
     grep -qx 'CONFIG_AEABI=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_OABI_COMPAT is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_KUSER_HELPERS=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_KEXEC=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_BLK_DEV_INITRD=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_RD_GZIP=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'BR2_PACKAGE_KEXEC=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    test -x "${ROOT_DIR}/scripts/build-recovery.sh"
+    test -x "${ROOT_DIR}/scripts/recovery-init.sh"
+    test -x "${ROOT_DIR}/scripts/recovery-write.sh"
+    test -x "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-enter-recovery"
     grep -qx 'CONFIG_TTY=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_VT=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_VT_CONSOLE=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
@@ -225,6 +233,7 @@ case "${1:-source}" in
       die "rootfs still contains a ttySAC0 respawn entry"
 
     mdir -i "${OUTPUT_DIR}/boot.fat" ::earlyharetlog.txt >/dev/null
+    mdir -i "${OUTPUT_DIR}/boot.fat" ::recovery.cpio.gz >/dev/null
     (cd "${OUTPUT_DIR}" && sha256sum --check SHA256SUMS)
     rootfs_size="$(stat --format='%s' "${OUTPUT_DIR}/rootfs.ext2")"
     test $((rootfs_size % 512)) -eq 0

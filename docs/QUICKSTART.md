@@ -6,6 +6,21 @@ This is the shortest path from a stock HP iPAQ rx1950 to the current engineering
 
 Download `rx1950-linux-<version>.img.xz` and `SHA256SUMS` from [GitHub Releases](https://github.com/BlackF1re/rx1950-linux/releases), verify the checksum, then write the image as a **disk image** to an SD card. Do not copy the `.img.xz` file onto an existing FAT filesystem.
 
+After the first installation, a Windows host with Git for Windows, GitHub CLI
+and PuTTY can replace the whole card through the point-to-point USB cable:
+
+```sh
+tools/update-rx1950.sh --latest
+tools/update-rx1950.sh --run ACTIONS_RUN_ID
+```
+
+The updater verifies the published compressed image, boots an authenticated
+RAM recovery through `kexec`, unmounts the SD root, streams the raw image over
+SSH, and verifies the bytes read back from the card. External power is
+mandatory. Images predating OTA support need one automatic WM/HaRET bootstrap
+cycle; install the HaRET shortcut in `\Windows\Startup` (localized WM images
+may call this folder `\Windows\Автозагрузка`).
+
 Linux example:
 
 ```sh
