@@ -129,13 +129,17 @@ extract /etc/init.d/S48xserver "${tmp}/S48xserver"
 grep -Fq 'Xorg :0' "${tmp}/S48xserver" || die 'Xorg is not started at boot'
 extract /etc/init.d/S50matchbox "${tmp}/S50matchbox"
 grep -Fq 'rx1950-shell' "${tmp}/S50matchbox" || die 'minimal PDA shell is not started'
-grep -Fq 'rx1950-keyboard' "${tmp}/S50matchbox" || die 'keyboard tray toggle is not started'
 if grep -Eq 'matchbox-(window-manager|desktop|panel)|mb-applet-' "${tmp}/S50matchbox"; then
     die 'legacy multi-process Matchbox desktop stack is still started'
 fi
-if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${tmp}/S50matchbox"; then
+if grep -Eq '^[[:space:]]*(rx1950-keyboard|matchbox-keyboard)([[:space:]]+show)?[[:space:]]*&' "${tmp}/S50matchbox"; then
     die 'on-screen keyboard is still started unconditionally'
 fi
+extract /usr/bin/rx1950-keyboard "${tmp}/rx1950-keyboard"
+grep -Fq 'matchbox-keyboard "$LAYOUT"' "${tmp}/rx1950-keyboard" ||
+    die 'on-demand keyboard helper does not launch matchbox-keyboard'
+grep -Fq 'toggle)' "${tmp}/rx1950-keyboard" ||
+    die 'on-demand keyboard helper has no toggle action'
 extract /usr/sbin/rx1950-wlan "${tmp}/rx1950-wlan"
 grep -Fq 'udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q' "${tmp}/rx1950-wlan" ||
     die 'WLAN DHCP is not foregrounded and bounded'
