@@ -136,7 +136,7 @@ plink "${normal_options[@]}" "${remote[0]}" \
 printf 'Waiting for the raw USB recovery receiver, then streaming and verifying the whole-card image...\n'
 sent=false
 for _ in $(seq 1 180); do
-    if xz --decompress --stdout "${image}" | ncat --send-only --idle-timeout 30 "${DEVICE}" 31337; then
+    if xz --decompress --stdout "${image}" | ncat --send-only --idle-timeout 30s "${DEVICE}" 31337; then
         sent=true
         break
     fi
