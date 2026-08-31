@@ -233,7 +233,8 @@ validate_kernel_config() {
         '# CONFIG_MTD_BLOCK is not set'
         '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set'
         'CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"'
-        'CONFIG_CMDLINE_FORCE=y'
+        'CONFIG_CMDLINE_FROM_BOOTLOADER=y'
+        '# CONFIG_CMDLINE_FORCE is not set'
     )
 
     for requirement in "${requirements[@]}"; do
@@ -330,9 +331,11 @@ build_kernel() {
     cp "${ROOT_DIR}/kernel/rx1950_defconfig" "${out}/.config"
     sed -i \
         -e 's|^CONFIG_CMDLINE=.*|CONFIG_CMDLINE="root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"|' \
+        -e '/^CONFIG_CMDLINE_FROM_BOOTLOADER=/d' \
+        -e '/^CONFIG_CMDLINE_EXTEND=/d' \
         -e '/^CONFIG_CMDLINE_FORCE=/d' \
         "${out}/.config"
-    printf '%s\n' 'CONFIG_CMDLINE_FORCE=y' >> "${out}/.config"
+    printf '%s\n' 'CONFIG_CMDLINE_FROM_BOOTLOADER=y' >> "${out}/.config"
     make -C "${source}" O="${out}" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" olddefconfig
     validate_kernel_config "${out}/.config"
 
