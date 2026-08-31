@@ -17,7 +17,12 @@ rescue_shell() {
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mount -t proc proc /proc || rescue_shell 'cannot mount proc'
 mount -t sysfs sysfs /sys || rescue_shell 'cannot mount sysfs'
-mkdir -p /var/run
+# Keep all writable runtime paths in RAM.  recovery-write stores the media
+# checksum in /tmp after the full card has been received; without this
+# directory a successful write was reported as a failure and recovery would
+# accept another destructive stream.
+mkdir -p /var/run /tmp
+chmod 1777 /tmp
 
 # Recovery is deliberately unattended. If the host disappears before it can
 # finish (bad cable, suspended laptop, failed SSH), return to WM and the normal

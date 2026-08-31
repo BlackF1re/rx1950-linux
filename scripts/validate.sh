@@ -164,6 +164,8 @@ case "${1:-source}" in
     test -x "${ROOT_DIR}/scripts/recovery-init.sh"
     test -x "${ROOT_DIR}/scripts/recovery-write.sh"
     grep -Fq '( sleep 2700; reboot -f ) &' "${ROOT_DIR}/scripts/recovery-init.sh"
+    grep -Fqx 'mkdir -p /var/run /tmp' "${ROOT_DIR}/scripts/recovery-init.sh"
+    grep -Fqx 'chmod 1777 /tmp' "${ROOT_DIR}/scripts/recovery-init.sh"
     grep -Fqx 'CONFIG_NC=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
     grep -Fqx 'CONFIG_NC_SERVER=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
     grep -Fq 'nc -l -p 31337' "${ROOT_DIR}/scripts/recovery-init.sh"
