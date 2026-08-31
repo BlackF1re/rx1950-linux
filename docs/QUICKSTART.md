@@ -34,7 +34,7 @@ Replace `/dev/sdX` with the whole SD device, not a partition. On Windows, use an
 1. Power/boot the rx1950 normally into Windows Mobile.
 2. Insert the prepared SD card.
 3. Open the FAT partition and run `haret.exe`.
-4. HaRET reads `startup.txt` and boots the supplied `zImage` with machine type 952.
+4. HaRET reads `startup.txt`, waits 10 seconds for hardware initialization, and boots the supplied `zImage` with machine type 952.
 5. The first Linux boot expands partition 2 and ext4 to the rest of the card. One automatic reboot may occur if the running kernel cannot reread the resized partition table immediately.
 
 Removing the card and resetting returns to the stock Windows Mobile boot path.

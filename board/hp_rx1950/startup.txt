@@ -10,4 +10,7 @@ set KERNEL zImage
 set FBDURINGBOOT 0
 set KERNELCRC 1
 set CMDLINE "root=/dev/mmcblk0p2 rootwait rw console=tty0 loglevel=4 consoleblank=0"
+# Autostart can invoke HaRET before Windows Mobile has finished bringing up
+# the RX1950 hardware. Let WinCE settle before HaRET shuts it down.
+sleep 10000
 bootlinux
