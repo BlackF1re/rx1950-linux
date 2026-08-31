@@ -38,6 +38,7 @@ validate_artifacts() {
     image="$(find "$out" -maxdepth 1 -type f -name 'rx1950-linux-*.img' -print -quit)"
     [[ -n "$image" ]] || die 'assembled image not found'
     [[ -f "$out/zImage" ]] || die 'zImage not found'
+    [[ -f "$out/zImage-recovery" ]] || die 'embedded recovery kernel not found'
     [[ -f "$out/kernel-modules.tar" ]] || die 'kernel module bundle not found'
     [[ -f "$out/rootfs.ext2" ]] || die 'rootfs.ext2 not found'
     [[ -f "$out/provenance.txt" ]] || die 'provenance not found'

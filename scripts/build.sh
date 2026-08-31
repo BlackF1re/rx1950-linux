@@ -354,6 +354,46 @@ build_kernel() {
     cp "${out}/.config" "${OUTPUT_DIR}/kernel.config"
 }
 
+build_recovery_kernel() {
+    require make
+    require gzip
+    require "${CROSS_COMPILE}gcc"
+    [[ -s "${OUTPUT_DIR}/recovery.cpio.gz" ]] || die "recovery initramfs artifact is not available"
+
+    local source out
+    source="$(prepare_kernel)"
+    apply_kernel_patches "${source}"
+    validate_kernel_source "${source}"
+    install_kernel_regdb "${source}"
+    gzip -dc "${OUTPUT_DIR}/recovery.cpio.gz" > "${source}/rx1950-recovery.cpio"
+
+    out="${BUILD_DIR}/recovery-kernel-output"
+    rm -rf "${out}"
+    mkdir -p "${out}"
+    cp "${ROOT_DIR}/kernel/rx1950_defconfig" "${out}/.config"
+    "${source}/scripts/config" --file "${out}/.config" \
+        --set-str INITRAMFS_SOURCE rx1950-recovery.cpio \
+        --enable INITRAMFS_FORCE \
+        --set-str CMDLINE 'rdinit=/init console=tty0 loglevel=4 consoleblank=0' \
+        --disable CMDLINE_FROM_BOOTLOADER \
+        --disable CMDLINE_EXTEND \
+        --enable CMDLINE_FORCE
+    make -C "${source}" O="${out}" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" olddefconfig
+    grep -Fqx 'CONFIG_INITRAMFS_SOURCE="rx1950-recovery.cpio"' "${out}/.config" ||
+        die "recovery kernel lost its embedded initramfs"
+    grep -Fqx 'CONFIG_INITRAMFS_FORCE=y' "${out}/.config" ||
+        die "recovery kernel may accept an external initramfs"
+    grep -Fqx 'CONFIG_CMDLINE_FORCE=y' "${out}/.config" ||
+        die "recovery kernel does not force its isolated command line"
+    grep -Fqx 'CONFIG_CMDLINE="rdinit=/init console=tty0 loglevel=4 consoleblank=0"' "${out}/.config" ||
+        die "recovery kernel lost its init command line"
+    grep -Fqx '# CONFIG_CMDLINE_FROM_BOOTLOADER is not set' "${out}/.config" ||
+        die "recovery kernel still accepts HaRET's normal root command line"
+    make -C "${source}" O="${out}" ARCH=arm CROSS_COMPILE="${CROSS_COMPILE}" -j"$(nproc)" zImage
+    cp "${out}/arch/arm/boot/zImage" "${OUTPUT_DIR}/zImage-recovery"
+    cp "${out}/.config" "${OUTPUT_DIR}/recovery-kernel.config"
+}
+
 prepare_haret() {
     # This RX1950-specific binary is the historically deployed loader for
     # the device. It reaches the target from locked stock WM 6.1 systems,
@@ -389,8 +429,9 @@ assemble_image() {
     [[ -f "${OUTPUT_DIR}/zImage" ]] || die "kernel artifact is not available"
     [[ -f "${OUTPUT_DIR}/kernel-modules.tar" ]] || die "kernel module bundle is not available"
     [[ -f "${OUTPUT_DIR}/rootfs.ext2" ]] || die "root filesystem artifact is not available"
-    [[ -f "${OUTPUT_DIR}/recovery.cpio.gz" ]] || die "cable-update recovery is not available"
+    [[ -f "${OUTPUT_DIR}/zImage-recovery" ]] || die "embedded cable-update recovery kernel is not available"
     validate_zimage_placement "${OUTPUT_DIR}/zImage"
+    validate_zimage_placement "${OUTPUT_DIR}/zImage-recovery"
 
     local haret bootfs image root_start rootfs_size image_size haret_log_trigger
     haret="$(prepare_haret)"
@@ -408,7 +449,7 @@ assemble_image() {
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/startup.txt" ::startup.txt
     mcopy -i "${bootfs}" "${OUTPUT_DIR}/zImage" ::zImage
     mcopy -i "${bootfs}" "${OUTPUT_DIR}/kernel-modules.tar" ::kernel-modules.tar
-    mcopy -i "${bootfs}" "${OUTPUT_DIR}/recovery.cpio.gz" ::recovery.cpio.gz
+    mcopy -i "${bootfs}" "${OUTPUT_DIR}/zImage-recovery" ::zImage-recovery
     mcopy -i "${bootfs}" "${ROOT_DIR}/board/hp_rx1950/README.txt" ::README.txt
 
     # Verify without changing last-check timestamps or other ext4 metadata.
@@ -428,7 +469,7 @@ assemble_image() {
     xz --keep --force --threads=1 --check=crc32 "${image}"
     (
         cd "${OUTPUT_DIR}"
-        sha256sum "${IMAGE_NAME}.img" "${IMAGE_NAME}.img.xz" zImage recovery.cpio.gz > SHA256SUMS
+        sha256sum "${IMAGE_NAME}.img" "${IMAGE_NAME}.img.xz" zImage zImage-recovery > SHA256SUMS
     )
     {
         printf 'build=%s\n' "${BUILD_ID:-local}"
@@ -449,7 +490,8 @@ assemble_image() {
 case "${1:-all}" in
     rootfs) build_rootfs ;;
     kernel) build_kernel ;;
+    recovery-kernel) build_recovery_kernel ;;
     image) assemble_image ;;
-    all) build_rootfs; build_kernel; assemble_image ;;
-    *) die "usage: $0 {rootfs|kernel|image|all}" ;;
+    all) build_rootfs; build_kernel; build_recovery_kernel; assemble_image ;;
+    *) die "usage: $0 {rootfs|kernel|recovery-kernel|image|all}" ;;
 esac

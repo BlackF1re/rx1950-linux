@@ -165,9 +165,9 @@ case "${1:-source}" in
     test -x "${ROOT_DIR}/scripts/recovery-write.sh"
     grep -Fq '( sleep 2700; reboot -f ) &' "${ROOT_DIR}/scripts/recovery-init.sh"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
-    grep -qx 'set INITRD recovery.cpio.gz' "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
-    grep -Fq 'initrd=0x31508000,' "${ROOT_DIR}/tools/update-rx1950.sh"
-    grep -Fq 'wc -c < "${initramfs}"' "${ROOT_DIR}/tools/update-rx1950.sh"
+    ! grep -q '^set INITRD ' "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
+    grep -Fq 'zImage-recovery' "${ROOT_DIR}/tools/update-rx1950.sh"
+    grep -Fq 'CONFIG_INITRAMFS_SOURCE' "${ROOT_DIR}/scripts/build.sh"
     grep -qx 'sleep 10000' "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
     grep -qx 'CONFIG_TTY=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_VT=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
@@ -242,7 +242,13 @@ case "${1:-source}" in
       die "rootfs still contains a ttySAC0 respawn entry"
 
     mdir -i "${OUTPUT_DIR}/boot.fat" ::earlyharetlog.txt >/dev/null
-    mdir -i "${OUTPUT_DIR}/boot.fat" ::recovery.cpio.gz >/dev/null
+    mdir -i "${OUTPUT_DIR}/boot.fat" ::zImage-recovery >/dev/null
+    test -s "${OUTPUT_DIR}/recovery-kernel.config"
+    grep -Fqx 'CONFIG_INITRAMFS_SOURCE="rx1950-recovery.cpio"' "${OUTPUT_DIR}/recovery-kernel.config"
+    grep -Fqx 'CONFIG_INITRAMFS_FORCE=y' "${OUTPUT_DIR}/recovery-kernel.config"
+    grep -Fqx 'CONFIG_CMDLINE_FORCE=y' "${OUTPUT_DIR}/recovery-kernel.config"
+    grep -Fqx 'CONFIG_CMDLINE="rdinit=/init console=tty0 loglevel=4 consoleblank=0"' "${OUTPUT_DIR}/recovery-kernel.config"
+    grep -Fqx '# CONFIG_CMDLINE_FROM_BOOTLOADER is not set' "${OUTPUT_DIR}/recovery-kernel.config"
     (cd "${OUTPUT_DIR}" && sha256sum --check SHA256SUMS)
     rootfs_size="$(stat --format='%s' "${OUTPUT_DIR}/rootfs.ext2")"
     test $((rootfs_size % 512)) -eq 0

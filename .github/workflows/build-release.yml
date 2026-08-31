@@ -224,15 +224,15 @@ jobs:
       RX1950_RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v5
-      - name: Restore verified HaRET toolchain
+      - name: Restore verified kernel source downloads
         uses: actions/cache@v5
         with:
           path: dl
-          key: rx1950-haret-sources-v2-${{ runner.os }}-${{ hashFiles('scripts/sources.lock.sh') }}
+          key: rx1950-kernel-sources-v2-${{ runner.os }}-${{ hashFiles('scripts/sources.lock.sh') }}
           restore-keys: |
-            rx1950-haret-sources-v2-${{ runner.os }}-
-      - name: Install image and HaRET build tools
-        run: sudo apt-get update && sudo apt-get install -y build-essential dosfstools e2fsprogs gcc-multilib libc6-i386 lib32z1 mtools parted python3 curl xz-utils
+            rx1950-kernel-sources-v2-${{ runner.os }}-
+      - name: Install image, kernel and HaRET build tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev gcc-arm-linux-gnueabi dosfstools e2fsprogs gcc-multilib libc6-i386 lib32z1 mtools parted python3 curl git xz-utils
       - uses: actions/download-artifact@v4
         with:
           pattern: '*-${{ needs.plan.outputs.id }}'
@@ -240,6 +240,8 @@ jobs:
           merge-multiple: true
       - name: Verify stage hand-offs
         run: sha256sum --check output/rootfs.SHA256SUMS && sha256sum --check output/kernel.SHA256SUMS
+      - name: Build self-contained RAM recovery kernel
+        run: bash scripts/build.sh recovery-kernel
       - name: Assemble SD image
         run: bash scripts/build.sh image
       - name: Verify sealed image
@@ -256,6 +258,8 @@ jobs:
             output/SHA256SUMS
             output/provenance.txt
             output/zImage
+            output/zImage-recovery
+            output/recovery-kernel.config
             output/kernel-modules.tar
             output/recovery.cpio.gz
             board/hp_rx1950/startup.txt
@@ -292,11 +296,12 @@ jobs:
           checksums="$(find release -type f -name SHA256SUMS -print -quit)"
           provenance="$(find release -type f -name provenance.txt -print -quit)"
           kernel="$(find release -type f -name zImage -print -quit)"
+          recovery_kernel="$(find release -type f -name zImage-recovery -print -quit)"
           modules="$(find release -type f -name kernel-modules.tar -print -quit)"
           recovery="$(find release -type f -name recovery.cpio.gz -print -quit)"
           startup="$(find release -type f -name startup.txt -print -quit)"
           recovery_startup="$(find release -type f -name startup-recovery.txt -print -quit)"
-          test -n "$image" && test -n "$checksums" && test -n "$provenance" && test -n "$kernel" && test -n "$modules" && test -n "$recovery" && test -n "$startup" && test -n "$recovery_startup"
+          test -n "$image" && test -n "$checksums" && test -n "$provenance" && test -n "$kernel" && test -n "$recovery_kernel" && test -n "$modules" && test -n "$recovery" && test -n "$startup" && test -n "$recovery_startup"
 
           mapfile -t package_assets < <(find release/packages -maxdepth 1 -type f -print | LC_ALL=C sort)
           test "${#package_assets[@]}" -gt 0
@@ -305,7 +310,7 @@ jobs:
 
           gh release create "$VERSION" \
             "$image#Primary SD-card image" \
-            "$checksums" "$provenance" "$kernel" "$modules" "$recovery" "$startup" "$recovery_startup" \
+            "$checksums" "$provenance" "$kernel" "$recovery_kernel" "$modules" "$recovery" "$startup" "$recovery_startup" \
             "${package_assets[@]}" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "rx1950-linux $VERSION" --generate-notes

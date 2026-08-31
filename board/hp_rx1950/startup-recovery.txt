@@ -4,13 +4,11 @@ set RAMSIZE 32*1024*1024
 set MTYPE 952
 set KERNEL_OFFSET 0x1000000
 set KERNEL zImage.ota
-set INITRD recovery.cpio.gz
 set FBDURINGBOOT 0
 set KERNELCRC 1
-# tools/update-rx1950.sh adds an exact initrd=<physical-address>,<size>
-# argument here.  The explicit command-line description is needed because
-# this old HaRET build's ATAG_INITRD2 is not observed by Linux 6.2 on rx1950.
-set CMDLINE "rdinit=/init console=tty0 loglevel=4 consoleblank=0"
+# zImage.ota is the dedicated recovery kernel with /init embedded.  Do not use
+# HaRET INITRD here: its ATAG_INITRD2 is lost on this machine.
+set CMDLINE "console=tty0 loglevel=4 consoleblank=0"
 # Recovery is launched by the same early Windows Mobile autostart path.
 sleep 10000
 bootlinux

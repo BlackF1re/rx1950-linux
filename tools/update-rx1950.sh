@@ -73,8 +73,7 @@ case "${SOURCE}" in
         tag=${VALUE}
         [[ "${SOURCE}" = release ]] || tag=$(gh release view --repo "${REPOSITORY}" --json tagName --jq .tagName)
         gh release download "${tag}" --repo "${REPOSITORY}" --dir "${payload}" \
-            --pattern '*.img.xz' --pattern SHA256SUMS --pattern zImage \
-            --pattern recovery.cpio.gz
+            --pattern '*.img.xz' --pattern SHA256SUMS --pattern zImage-recovery
         ;;
     dir)
         payload=$(cd "${VALUE}" && pwd)
@@ -83,38 +82,25 @@ esac
 
 image=$(find "${payload}" -maxdepth 2 -type f -name 'rx1950-linux-*.img.xz' -print -quit)
 checksums=$(find "${payload}" -maxdepth 2 -type f -name SHA256SUMS -print -quit)
-kernel=$(find "${payload}" -maxdepth 2 -type f -name zImage -print -quit)
-initramfs=$(find "${payload}" -maxdepth 2 -type f -name recovery.cpio.gz -print -quit)
+recovery_kernel=$(find "${payload}" -maxdepth 2 -type f -name zImage-recovery -print -quit)
 recovery_startup=${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt
-[[ -s "${image}" && -s "${checksums}" && -s "${kernel}" && -s "${initramfs}" && -s "${recovery_startup}" ]] ||
-    die 'payload is incomplete (image, checksums, kernel and recovery are required)'
+[[ -s "${image}" && -s "${checksums}" && -s "${recovery_kernel}" && -s "${recovery_startup}" ]] ||
+    die 'payload is incomplete (image, checksums and embedded recovery kernel are required)'
 
 image_name=$(basename "${image}")
 raw_name=${image_name%.xz}
 compressed_sha=$(awk -v name="${image_name}" '$2 == name { print $1 }' "${checksums}")
 raw_sha=$(awk -v name="${raw_name}" '$2 == name { print $1 }' "${checksums}")
-[[ "${compressed_sha}" =~ ^[0-9a-f]{64}$ && "${raw_sha}" =~ ^[0-9a-f]{64}$ ]] ||
-    die 'SHA256SUMS does not describe both compressed and raw images'
+recovery_sha=$(awk '$2 == "zImage-recovery" { print $1 }' "${checksums}")
+[[ "${compressed_sha}" =~ ^[0-9a-f]{64}$ && "${raw_sha}" =~ ^[0-9a-f]{64}$ &&
+   "${recovery_sha}" =~ ^[0-9a-f]{64}$ ]] ||
+    die 'SHA256SUMS does not describe compressed/raw images and recovery kernel'
 printf '%s  %s\n' "${compressed_sha}" "${image}" | sha256sum --check --status ||
     die 'downloaded compressed image checksum mismatch'
+printf '%s  %s\n' "${recovery_sha}" "${recovery_kernel}" | sha256sum --check --status ||
+    die 'downloaded recovery kernel checksum mismatch'
 raw_size=$(xz --robot --list "${image}" | awk -F '\t' '$1 == "totals" { print $5 }')
 [[ "${raw_size}" =~ ^[0-9]+$ ]] || die 'cannot determine uncompressed image size'
-initramfs_size=$(wc -c < "${initramfs}" | tr -d '[:space:]')
-[[ "${initramfs_size}" =~ ^[1-9][0-9]*$ ]] || die 'cannot determine recovery initramfs size'
-
-# HaRET relocates INITRD to RAMADDR + KERNEL_OFFSET + 0x508000.  Its
-# ATAG_INITRD2 is not reliably consumed on this machine, while ATAG_CMDLINE is.
-# Describe the same region explicitly so the kernel reserves and unpacks it.
-generated_recovery_startup=${temporary}/startup-recovery.txt
-awk -v size="${initramfs_size}" '
-    /^set CMDLINE / {
-        sub(/rdinit=\/init/, "initrd=0x31508000," size " rdinit=/init")
-    }
-    { print }
-' "${recovery_startup}" > "${generated_recovery_startup}"
-grep -Fq "initrd=0x31508000,${initramfs_size} rdinit=/init" "${generated_recovery_startup}" ||
-    die 'failed to specialize the recovery HaRET command line'
-
 key=${HOME}/.ssh/rx1950_update_ed25519
 if [[ ! -s "${key}" || ! -s "${key}.pub" ]]; then
     mkdir -p "${HOME}/.ssh"
@@ -183,9 +169,8 @@ if ! ${ASSUME_YES}; then
     [[ "${confirmation}" = FLASH ]] || die 'update cancelled'
 fi
 
-pscp "${pscp_options[@]}" "${kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
-pscp "${pscp_options[@]}" "${initramfs}" "${remote[0]}:/mnt/boot/recovery.cpio.gz"
-pscp "${pscp_options[@]}" "${generated_recovery_startup}" "${remote[0]}:/mnt/boot/startup.update"
+pscp "${pscp_options[@]}" "${recovery_kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
+pscp "${pscp_options[@]}" "${recovery_startup}" "${remote[0]}:/mnt/boot/startup.update"
 
 printf 'Entering authenticated RAM recovery through WM/HaRET...\n'
 plink "${plink_options[@]}" "${remote[0]}" \
