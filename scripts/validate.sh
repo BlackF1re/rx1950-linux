@@ -172,6 +172,7 @@ case "${1:-source}" in
     grep -Fq '/usr/sbin/rx1950-recovery-write' "${ROOT_DIR}/scripts/recovery-init.sh"
     grep -Fq 'progress_done=0' "${ROOT_DIR}/scripts/recovery-write.sh"
     ! grep -Fq 'render_progress "$phase" "$total" "$total"' "${ROOT_DIR}/scripts/recovery-write.sh"
+    grep -Fq 'dd of=/dev/mmcblk0 bs=1048576 <&0 &' "${ROOT_DIR}/scripts/recovery-write.sh"
     ! grep -Fq 'dropbear' "${ROOT_DIR}/scripts/recovery-init.sh"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
     ! grep -q '^set INITRD ' "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"

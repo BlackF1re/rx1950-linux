@@ -57,7 +57,10 @@ capacity=$((sectors * 512))
 [ "$bytes" -le "$capacity" ] || die "image is larger than the SD card"
 
 echo "Writing $bytes bytes to /dev/mmcblk0; do not disconnect power." >&2
-dd of=/dev/mmcblk0 bs=1048576 &
+# BusyBox ash redirects the stdin of a background job to /dev/null unless it
+# is made explicit.  This script is fed by nc through a pipe, so retain fd 0
+# or dd reports a deceptive "0+0 records" and closes the host connection.
+dd of=/dev/mmcblk0 bs=1048576 <&0 &
 writer=$!
 monitor_progress 'Writing   ' "$writer" "$bytes"
 wait "$writer"
