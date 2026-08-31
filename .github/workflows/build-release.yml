@@ -132,9 +132,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ~/.buildroot-ccache
-          key: rx1950-buildroot-ccache-v2-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat-${{ needs.plan.outputs.rootfs_cache }}
+          key: rx1950-buildroot-ccache-v1-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat-${{ needs.plan.outputs.rootfs_cache }}
           restore-keys: |
-            rx1950-buildroot-ccache-v2-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat-
+            rx1950-buildroot-ccache-v1-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs python3
       - name: Build root filesystem
@@ -159,7 +159,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ~/.buildroot-ccache
-          key: rx1950-buildroot-ccache-v2-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat-${{ needs.plan.outputs.rootfs_cache }}
+          key: rx1950-buildroot-ccache-v1-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat-${{ needs.plan.outputs.rootfs_cache }}
       - name: Build package feed from verified base state
         shell: bash
         run: |

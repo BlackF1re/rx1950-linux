@@ -62,7 +62,7 @@ require_text 'key: rx1950-buildroot-output-v7-${{ runner.os }}-${{ needs.plan.ou
     'Buildroot output does not use the semantic exact key'
 require_text "hashFiles('scripts/sources.lock.sh')" "${WORKFLOW}" \
     'download caches are not keyed by the pinned source lock'
-require_text 'key: rx1950-buildroot-ccache-v2-' "${WORKFLOW}" \
+require_text 'key: rx1950-buildroot-ccache-v1-' "${WORKFLOW}" \
     'Buildroot compiler cache is missing'
 require_text 'restore-keys: |' "${WORKFLOW}" \
     'Buildroot compiler cache cannot reuse a prior compatible population'
