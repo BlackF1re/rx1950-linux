@@ -9,16 +9,14 @@ set -euo pipefail
 case $(uname -s) in
     MINGW*|MSYS*)
         PATH="/usr/bin:/bin:${PATH}"; export PATH
-        # Git for Windows 10.3 and Dropbear 2025.88 stall after exchanging
-        # banners on this ARM target. Windows' in-box OpenSSH interoperates.
-        ssh() { /c/WINDOWS/System32/OpenSSH/ssh.exe "$@"; }
+        # Use PuTTY tools consistently. The Windows OpenSSH client can time
+        # out while waiting for a Dropbear banner on this ARM target.
         ;;
 esac
 
 REPOSITORY=BlackF1re/rx1950-linux
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE=192.168.7.2
-BIND_ADDRESS=192.168.7.1
 PASSWORD=${RX1950_PASSWORD-rx1950}
 SOURCE=
 VALUE=
@@ -52,7 +50,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "${SOURCE}" ]] || { usage >&2; exit 2; }
 
-for command in gh plink pscp ssh ssh-keygen sha256sum xz awk; do
+for command in gh plink pscp ssh-keygen sha256sum xz awk; do
     command -v "${command}" >/dev/null || die "missing host command: ${command}"
 done
 
@@ -101,31 +99,24 @@ printf '%s  %s\n' "${recovery_sha}" "${recovery_kernel}" | sha256sum --check --s
     die 'downloaded recovery kernel checksum mismatch'
 raw_size=$(xz --robot --list "${image}" | awk -F '\t' '$1 == "totals" { print $5 }')
 [[ "${raw_size}" =~ ^[0-9]+$ ]] || die 'cannot determine uncompressed image size'
-key=${HOME}/.ssh/rx1950_update_ed25519
-if [[ ! -s "${key}" || ! -s "${key}.pub" ]]; then
+key_base=${HOME}/.ssh/rx1950_update_rsa
+key=${key_base}
+key_pub=${key_base}.pub
+if [[ ! -s "${key}" || ! -s "${key_pub}" ]]; then
     mkdir -p "${HOME}/.ssh"
-    ssh-keygen -q -t ed25519 -N '' -C 'rx1950 cable updater' -f "${key}"
+    # Plink reads traditional PEM RSA keys directly. More importantly, this
+    # avoids the Dropbear 2025.88/Ed25519 post-authentication corruption seen
+    # in the RAM recovery on the ARM9.
+    ssh-keygen -q -t rsa -b 3072 -m PEM -N '' -C 'rx1950 cable updater' -f "${key}"
 fi
 
 # Pin the key actually presented on the dedicated cable before using the
 # factory engineering password to install our update-only transport key.
-known_hosts=${temporary}/known_hosts
 probe=$(plink -batch -ssh -pw "${PASSWORD}" root@"${DEVICE}" true 2>&1 || true)
 fingerprint=$(printf '%s\n' "${probe}" | awk '/fingerprint is:/{getline; print $NF; exit}')
 [[ "${fingerprint}" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] ||
     die 'rx1950 SSH is not reachable over USB or its host key cannot be read'
 
-# ssh-keyscan cannot negotiate the KEX selected by Dropbear 2025.88. Record a
-# key with a credential-free normal handshake, then require it to match the
-# independently reported PuTTY fingerprint before sending the password.
-rm -f "${known_hosts}"
-ssh -o BatchMode=yes -o PreferredAuthentications=none \
-    -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="${known_hosts}" \
-    -o ConnectTimeout=15 -o BindAddress="${BIND_ADDRESS}" \
-    root@"${DEVICE}" true </dev/null >/dev/null 2>&1 || true
-[[ -s "${known_hosts}" ]] || die 'cannot capture the rx1950 OpenSSH host key'
-openssh_fingerprint=$(ssh-keygen -lf "${known_hosts}" -E sha256 | awk '{print $2}')
-[[ "${openssh_fingerprint}" = "${fingerprint}" ]] || die 'SSH host-key probes disagree'
 printf 'Cable device host key: %s\n' "${fingerprint}"
 
 # Development images used "rx1950", while a freshly assembled image has the
@@ -146,19 +137,16 @@ done
 [[ "${authenticated}" = true ]] ||
     die 'neither the configured nor the fresh-image root password was accepted'
 
-pscp -scp -batch -hostkey "${fingerprint}" -pw "${device_password}" "${key}.pub" \
+pscp -scp -batch -hostkey "${fingerprint}" -pw "${device_password}" "${key_pub}" \
     "root@${DEVICE}:/tmp/rx1950_update.pub" >/dev/null
 plink -batch -hostkey "${fingerprint}" -pw "${device_password}" root@"${DEVICE}" \
     'mkdir -p /root/.ssh; chmod 700 /root/.ssh; touch /root/.ssh/authorized_keys; grep -qxF "$(cat /tmp/rx1950_update.pub)" /root/.ssh/authorized_keys || cat /tmp/rx1950_update.pub >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys; rm -f /tmp/rx1950_update.pub'
 
-common_options=(-i "${key}" -o BatchMode=yes -o StrictHostKeyChecking=yes \
-    -o UserKnownHostsFile="${known_hosts}" -o ConnectTimeout=5 \
-    -o BindAddress="${BIND_ADDRESS}")
-ssh_options=("${common_options[@]}")
 remote=(root@"${DEVICE}")
-plink_options=(-batch -ssh -hostkey "${fingerprint}" -pw "${device_password}")
-pscp_options=(-scp -batch -hostkey "${fingerprint}" -pw "${device_password}")
-plink "${plink_options[@]}" "${remote[0]}" \
+plink_password_options=(-batch -ssh -hostkey "${fingerprint}" -pw "${device_password}")
+pscp_password_options=(-scp -batch -hostkey "${fingerprint}" -pw "${device_password}")
+plink_key_options=(-batch -ssh -hostkey "${fingerprint}" -i "${key}")
+plink "${plink_password_options[@]}" "${remote[0]}" \
     'test "$(cat /sys/class/power_supply/ac/online)" = 1' ||
     die 'external power is required for a whole-card update'
 
@@ -169,27 +157,27 @@ if ! ${ASSUME_YES}; then
     [[ "${confirmation}" = FLASH ]] || die 'update cancelled'
 fi
 
-pscp "${pscp_options[@]}" "${recovery_kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
-pscp "${pscp_options[@]}" "${recovery_startup}" "${remote[0]}:/mnt/boot/startup.update"
+pscp "${pscp_password_options[@]}" "${recovery_kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
+pscp "${pscp_password_options[@]}" "${recovery_startup}" "${remote[0]}:/mnt/boot/startup.update"
 
 printf 'Entering authenticated RAM recovery through WM/HaRET...\n'
-plink "${plink_options[@]}" "${remote[0]}" \
+plink "${plink_password_options[@]}" "${remote[0]}" \
     'cp /mnt/boot/startup.txt /mnt/boot/startup.normal.txt && mv /mnt/boot/startup.update /mnt/boot/startup.txt && sync && reboot' || true
 for _ in $(seq 1 120); do
     sleep 2
-    if ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /etc/rx1950-recovery' 2>/dev/null; then break; fi
+    if plink "${plink_key_options[@]}" "${remote[0]}" 'test -e /etc/rx1950-recovery' 2>/dev/null; then break; fi
 done
-ssh "${ssh_options[@]}" "${remote[@]}" 'test -e /etc/rx1950-recovery' ||
+plink "${plink_key_options[@]}" "${remote[0]}" 'test -e /etc/rx1950-recovery' ||
     die 'RAM recovery did not become reachable; its unattended fallback will reboot to the normal image'
 
 printf 'Streaming and verifying the whole-card image...\n'
-# Dropbear on this ARM9 needs a short pause between OpenSSH sessions; without
-# it the next client can time out before the server banner is emitted.
+# Dropbear on this ARM9 needs a short pause between sessions; without it the
+# next client can time out before the server banner is emitted.
 sleep 10
 xz --decompress --stdout "${image}" |
-    ssh "${ssh_options[@]}" "${remote[@]}" "/usr/sbin/rx1950-recovery-write '${raw_size}' '${raw_sha}'" |
+    plink "${plink_key_options[@]}" "${remote[0]}" "/usr/sbin/rx1950-recovery-write '${raw_size}' '${raw_sha}'" |
     tee "${temporary}/write.log"
 grep -qx RX1950_UPDATE_VERIFIED "${temporary}/write.log" || die 'device did not confirm media verification'
 
-ssh "${ssh_options[@]}" "${remote[@]}" 'sync; reboot -f' || true
+plink "${plink_key_options[@]}" "${remote[0]}" 'sync; reboot -f' || true
 printf 'Update verified. WM will now start HaRET automatically.\n'
