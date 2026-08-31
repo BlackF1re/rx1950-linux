@@ -166,7 +166,7 @@ case "${1:-source}" in
     grep -Fq '( sleep 2700; reboot -f ) &' "${ROOT_DIR}/scripts/recovery-init.sh"
     grep -Fqx 'CONFIG_NC=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
     grep -Fqx 'CONFIG_NC_SERVER=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
-    grep -Fqx 'if nc -l -p 31337 | /usr/sbin/rx1950-recovery-write "$image_bytes" "$image_sha"; then' "${ROOT_DIR}/scripts/recovery-init.sh"
+    grep -Fqx '    if nc -l -p 31337 | /usr/sbin/rx1950-recovery-write "$image_bytes" "$image_sha"; then' "${ROOT_DIR}/scripts/recovery-init.sh"
     ! grep -Fq 'dropbear' "${ROOT_DIR}/scripts/recovery-init.sh"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
     ! grep -q '^set INITRD ' "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
