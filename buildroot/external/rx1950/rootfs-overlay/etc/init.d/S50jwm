@@ -1,23 +1,21 @@
 #!/bin/sh
-# Start the minimal PDA session after the Xorg server.
+# Start the single JWM session after the framebuffer X server.
 
-export DISPLAY=:0.0
-export HOME=/root
+export DISPLAY=:0.0 HOME=/root
+PIDFILE=/run/jwm.pid
+LOGFILE=/tmp/jwm.log
 
-case "$1" in
+case "${1:-start}" in
     start)
-        MATCHBOX_THEME=Default
-        [ ! -r /etc/default/rx1950-ui ] || . /etc/default/rx1950-ui
-        case "$MATCHBOX_THEME" in Default) ;; *) MATCHBOX_THEME=Default;; esac
         attempts=0
         while [ ! -S /tmp/.X11-unix/X0 ] && [ "$attempts" -lt 10 ]; do
             sleep 1
             attempts=$((attempts + 1))
         done
         [ -S /tmp/.X11-unix/X0 ] || exit 0
-        # The Xlib shell is also the window manager. The keyboard remains
-        # on-demand; no desktop, panel, applet or second WM stays resident.
-        rx1950-shell >/var/log/rx1950-shell.log 2>&1 &
+        rm -rf /run/rx1950-app.*
+        jwm -f /etc/jwm/system.jwmrc >"$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
         if [ -r /etc/default/rx1950-power ]; then
             . /etc/default/rx1950-power
             case "${BLANK_SECONDS:-60}" in
@@ -28,6 +26,10 @@ case "$1" in
         fi
         ;;
     stop)
-        killall matchbox-keyboard rx1950-shell 2>/dev/null || true
+        rx1950-keyboard hide 2>/dev/null || true
+        if [ -s "$PIDFILE" ]; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+        fi
+        rm -f "$PIDFILE"
         ;;
 esac

@@ -20,7 +20,7 @@ valid_layout() {
 start_keyboard() {
     valid_layout "$LAYOUT" || LAYOUT=us
     if ! pidof matchbox-keyboard >/dev/null 2>&1; then
-        matchbox-keyboard "$LAYOUT" >/var/log/matchbox-keyboard.log 2>&1 &
+        matchbox-keyboard "$LAYOUT" >/tmp/matchbox-keyboard.log 2>&1 &
     fi
 }
 

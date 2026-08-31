@@ -2,7 +2,7 @@
 # Start Xorg directly on the S3C framebuffer with evdev touch and keys.
 
 PIDFILE=/run/Xorg.pid
-LOGFILE=/var/log/Xorg.log
+LOGFILE=/tmp/Xorg.log
 
 case "${1:-start}" in
     start)
@@ -11,7 +11,7 @@ case "${1:-start}" in
             echo 'Xorg is missing from the root filesystem' >&2
             exit 1
         }
-        mkdir -p /tmp/.X11-unix /var/log
+        mkdir -p /tmp/.X11-unix
         rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
         Xorg :0 -config /etc/X11/xorg.conf -nolisten tcp -noreset \
             >"$LOGFILE" 2>&1 &

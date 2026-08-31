@@ -1,6 +1,9 @@
 CONFIG_NTPD=y
 # CONFIG_FEATURE_NTPD_SERVER is not set
 CONFIG_TIMEOUT=y
+# No periodic jobs are installed.  Buildroot's default crond would otherwise
+# occupy RAM permanently on a 32 MiB machine while doing no work.
+# CONFIG_CROND is not set
 # The RAM-only cable recovery deliberately exposes a one-shot listener on the
 # physically point-to-point USB NCM link.  It avoids Dropbear's unreliable
 # encrypted transport on the PXA27x while the root filesystem is unavailable.

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Retry optional host DHCP in bounded, quiet bursts. The fixed 192.168.7.2
-# recovery address remains available even when no DHCP server exists.
+# Try optional host DHCP once.  The fixed 192.168.7.2 recovery address remains
+# available when no DHCP server exists, so an idle retry supervisor would only
+# waste scarce RAM.  After a successful lease udhcpc remains alive to renew it.
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
@@ -8,22 +9,8 @@ export PATH
 SCRIPT=/usr/share/udhcpc/rx1950-usb.script
 CLIENT_PID=/var/run/udhcpc-usb0-client.pid
 
-cleanup() {
-    if [ -s "$CLIENT_PID" ]; then
-        pid="$(cat "$CLIENT_PID" 2>/dev/null || true)"
-        [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-    fi
-    rm -f "$CLIENT_PID"
-}
-trap 'cleanup; exit 0' HUP INT TERM
+ip link show usb0 >/dev/null 2>&1 || exit 0
 
-while ip link show usb0 >/dev/null 2>&1; do
-    # -n exits after the bounded discovery attempts when no server exists.
-    # With a lease, foreground udhcpc remains alive to renew it normally.
-    udhcpc -n -f -i usb0 -p "$CLIENT_PID" -s "$SCRIPT" \
-        -t 3 -T 2 >/dev/null 2>&1 || true
-    sleep 60 &
-    wait $!
-done
-
-cleanup
+# -n exits after the bounded discovery attempts when no server exists.
+exec udhcpc -n -f -i usb0 -p "$CLIENT_PID" -s "$SCRIPT" \
+    -t 3 -T 2 >/dev/null 2>&1

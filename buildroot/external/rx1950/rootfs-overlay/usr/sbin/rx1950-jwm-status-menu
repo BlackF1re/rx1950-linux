@@ -1,0 +1,43 @@
+#!/bin/sh
+# Generate a fresh JWM status submenu without a resident monitoring process.
+
+xml_escape() {
+    printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
+}
+
+available=$(awk '/^MemAvailable:/ { printf "%.1f MiB", $2 / 1024 }' /proc/meminfo)
+swap=$(awk '/^SwapTotal:/ { total=$2 } /^SwapFree:/ { printf "%.1f MiB used", (total-$2)/1024 }' /proc/meminfo)
+battery=unknown
+for supply in /sys/class/power_supply/*; do
+    [ -e "$supply" ] || continue
+    if [ -r "$supply/capacity" ]; then
+        battery="$(cat "$supply/capacity") percent"
+        break
+    fi
+    if [ -r "$supply/voltage_now" ]; then
+        status=$(cat "$supply/status" 2>/dev/null || printf unknown)
+        voltage=$(awk '{ printf "%.2f V", $1 / 1000000 }' "$supply/voltage_now")
+        battery="$status, $voltage"
+        break
+    fi
+done
+network=disconnected
+for dev in /sys/class/net/wlan*; do
+    [ -e "$dev" ] || continue
+    name=${dev##*/}
+    ssid=$(iw dev "$name" link 2>/dev/null | sed -n 's/^[[:space:]]*SSID: //p' | head -1)
+    address=$(ip -4 -o addr show dev "$name" 2>/dev/null | awk 'NR==1 { print $4 }')
+    [ -z "$ssid$address" ] || network="${ssid:-Wi-Fi} ${address:-no address}"
+    break
+done
+
+cat <<EOF
+<JWM>
+  <Program label="Battery: $(xml_escape "$battery")">true</Program>
+  <Program label="Memory: $(xml_escape "$available") available">true</Program>
+  <Program label="Swap: $(xml_escape "$swap")">true</Program>
+  <Program label="Network: $(xml_escape "$network")">true</Program>
+  <Separator/>
+  <Program label="Detailed diagnostics">rx1950-launch --name diagnostics mb-applet-xterm-wrapper.sh -hold -e rx1950-control status</Program>
+</JWM>
+EOF

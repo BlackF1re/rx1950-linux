@@ -189,7 +189,7 @@ build_rootfs() {
     # state key. Rebuild them on every invocation so source-only UI changes
     # take seconds and can never be hidden by an otherwise valid cache hit.
     make -C "${source}" O="${out}" \
-        gpe-conf-rx1950-dirclean rx1950-shell-dirclean
+        jwm-dirclean
 
     make -C "${source}" O="${out}" -j"$(nproc)"
     cp "${out}/images/rootfs.ext2" "${OUTPUT_DIR}/rootfs.ext2"

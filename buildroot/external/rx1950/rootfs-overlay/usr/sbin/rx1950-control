@@ -56,13 +56,19 @@ case "${1:-}" in
         case "${2:-}" in ''|*[!0-9]*) exit 2;; esac
         amixer -q sset Master "$2%" unmute ;;
     theme-get)
-        matchbox-remote -r 2>/dev/null || printf 'MBOpus\n' ;;
+        sed -n 's|.*themes/\([^<]*\).*|\1|p' /etc/jwm/theme | head -1 ;;
     theme)
         theme=${2:-}
-        case "$theme" in MBOpus|Default|blondie) ;; *) exit 2;; esac
-        [ -d "/usr/share/themes/$theme/matchbox" ] || exit 2
-        printf 'MATCHBOX_THEME=%s\n' "$theme" > /etc/default/rx1950-ui
-        matchbox-remote -t "$theme" ;;
+        case "$theme" in blue|dark|contrast) ;; *) exit 2;; esac
+        [ -r "/usr/share/jwm/themes/$theme" ] || exit 2
+        tmp=/etc/jwm/theme.tmp.$$
+        trap 'rm -f "$tmp"' EXIT HUP INT TERM
+        printf '<JWM>\n  <Include>/usr/share/jwm/themes/%s</Include>\n</JWM>\n' "$theme" > "$tmp"
+        mv "$tmp" /etc/jwm/theme
+        trap - EXIT HUP INT TERM
+        jwm -reload ;;
+    audio-test)
+        speaker-test -q -c 1 -t sine -f 1000 -l 1 >/dev/null 2>&1 ;;
     keyboard-get) rx1950-keyboard status ;;
     keyboard) rx1950-keyboard layout "$2" ;;
     keyboard-toggle) rx1950-keyboard toggle ;;

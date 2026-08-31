@@ -56,7 +56,7 @@ require_text "hashFiles('scripts/sources.lock.sh')" "${WORKFLOW}" \
     'download caches are not keyed by the pinned source lock'
 require_text 'key: rx1950-buildroot-ccache-v1-' "${WORKFLOW}" \
     'Buildroot compiler cache is missing'
-require_text 'gpe-conf-rx1950-dirclean rx1950-shell-dirclean' \
+require_text 'jwm-dirclean' \
     "${ROOT_DIR}/scripts/build.sh" \
     'local packages can be hidden by a restored Buildroot state'
 require_text "steps.rootfs-validate.outcome == 'success'" "${WORKFLOW}" \

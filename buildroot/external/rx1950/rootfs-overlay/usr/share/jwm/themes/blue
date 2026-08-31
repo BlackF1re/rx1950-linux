@@ -1,0 +1,9 @@
+<JWM>
+  <WindowStyle decorations="flat"><Font>Sans-10:bold</Font><Width>3</Width><Corner>3</Corner><Foreground>#ffffff</Foreground><Background>#6d93b8</Background><Active><Foreground>#ffffff</Foreground><Background>#1769aa</Background></Active></WindowStyle>
+  <TrayStyle decorations="flat"><Font>Sans-10:bold</Font><Foreground>#ffffff</Foreground><Background>#1769aa</Background></TrayStyle>
+  <TaskListStyle list="all" group="true"><Font>Sans-9</Font><Foreground>#ffffff</Foreground><Background>#397eaf</Background><Active><Foreground>#ffffff</Foreground><Background>#0d4f86</Background></Active><Minimized><Foreground>#d9e8f4</Foreground><Background>#1769aa</Background></Minimized></TaskListStyle>
+  <TrayButtonStyle><Font>Sans-10:bold</Font><Foreground>#ffffff</Foreground><Background>#1769aa</Background><Active><Foreground>#ffffff</Foreground><Background>#0d4f86</Background></Active></TrayButtonStyle>
+  <ClockStyle><Font>Sans-9</Font><Foreground>#ffffff</Foreground><Background>#1769aa</Background></ClockStyle>
+  <MenuStyle decorations="flat"><Font>Sans-11</Font><Foreground>#10283b</Foreground><Background>#f4f8fb</Background><Active><Foreground>#ffffff</Foreground><Background>#1769aa</Background></Active></MenuStyle>
+  <PopupStyle><Font>Sans-9</Font><Foreground>#ffffff</Foreground><Background>#10283b</Background></PopupStyle>
+</JWM>

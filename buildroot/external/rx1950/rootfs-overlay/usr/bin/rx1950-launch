@@ -1,4 +1,23 @@
 #!/bin/sh
-# Give GUI commands started by the hardware-key daemon an X session context.
+# Give hardware-key commands an X session context and prevent accidental
+# duplicate applications from exhausting the rx1950's 32 MiB RAM.
+set -eu
 export DISPLAY="${DISPLAY:-:0.0}" HOME="${HOME:-/root}"
-exec "$@"
+
+case "${1:-}" in
+    --name) key=${2:-}; shift 2 ;;
+    *) key=$(basename "${1:-application}") ;;
+esac
+case "$key" in *[!A-Za-z0-9_.-]*|'') exit 2;; esac
+
+lock="/run/rx1950-app.$key"
+if ! mkdir "$lock" 2>/dev/null; then
+    if [ -r "$lock/pid" ] && kill -0 "$(cat "$lock/pid")" 2>/dev/null; then
+        exit 0
+    fi
+    rm -rf "$lock"
+    mkdir "$lock" 2>/dev/null || exit 0
+fi
+printf '%s\n' "$$" > "$lock/pid"
+trap 'rm -rf "$lock"' EXIT HUP INT TERM
+"$@"

@@ -2,7 +2,6 @@ menu "rx1950 Linux configuration"
 
 comment "HP iPAQ rx1950 target"
 
-source "$BR2_EXTERNAL_RX1950_PATH/package/gpe-conf-rx1950/Config.in"
-source "$BR2_EXTERNAL_RX1950_PATH/package/rx1950-shell/Config.in"
+source "$BR2_EXTERNAL_RX1950_PATH/package/jwm/Config.in"
 
 endmenu

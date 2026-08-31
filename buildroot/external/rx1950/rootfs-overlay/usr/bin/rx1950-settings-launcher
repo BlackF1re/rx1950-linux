@@ -1,3 +1,0 @@
-#!/bin/sh
-export DISPLAY="${DISPLAY:-:0.0}" HOME="${HOME:-/root}"
-exec gpe-conf "$@"

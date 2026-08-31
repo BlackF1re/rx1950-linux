@@ -1,0 +1,12 @@
+config BR2_PACKAGE_JWM
+	bool "jwm"
+	depends on BR2_PACKAGE_XORG7
+	depends on BR2_USE_MMU
+	select BR2_PACKAGE_XLIB_LIBX11
+	select BR2_PACKAGE_XLIB_LIBXFT
+	select BR2_PACKAGE_XLIB_LIBXRENDER
+	help
+	  Joe's Window Manager is a small, fast X11 window manager with an
+	  integrated application menu, task bar and notification area.
+
+	  https://joewing.net/projects/jwm/

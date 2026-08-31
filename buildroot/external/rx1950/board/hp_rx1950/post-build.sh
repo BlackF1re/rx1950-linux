@@ -114,19 +114,20 @@ chmod 0755 \
     "${TARGET_DIR}/etc/init.d/S38time-sync" \
     "${TARGET_DIR}/etc/init.d/S40wlan" \
     "${TARGET_DIR}/etc/init.d/S48xserver" \
-    "${TARGET_DIR}/etc/init.d/S50matchbox" \
+    "${TARGET_DIR}/etc/init.d/S50jwm" \
     "${TARGET_DIR}/usr/bin/mb-applet-xterm-wrapper.sh" \
     "${TARGET_DIR}/usr/bin/rx1950-keyboard" \
     "${TARGET_DIR}/usr/bin/rx1950-launch" \
-    "${TARGET_DIR}/usr/bin/rx1950-settings-launcher" \
     "${TARGET_DIR}/usr/bin/rx1950-wifi-launcher" \
     "${TARGET_DIR}/usr/share/udhcpc/rx1950-usb.script" \
     "${TARGET_DIR}/usr/sbin/rx1950-usb-dhcp" \
     "${TARGET_DIR}/usr/sbin/rx1950-time-sync" \
     "${TARGET_DIR}/usr/sbin/rx1950-timezone" \
     "${TARGET_DIR}/usr/sbin/rx1950-wlan" \
-    "${TARGET_DIR}/usr/sbin/rx1950-settings" \
     "${TARGET_DIR}/usr/sbin/rx1950-control" \
+    "${TARGET_DIR}/usr/sbin/rx1950-button-settings" \
+    "${TARGET_DIR}/usr/sbin/rx1950-jwm-status-menu" \
+    "${TARGET_DIR}/usr/sbin/rx1950-power-menu" \
     "${TARGET_DIR}/usr/sbin/rx1950-wifi-ui" \
     "${TARGET_DIR}/usr/sbin/rx1950-wlan-firmware" \
     "${TARGET_DIR}/usr/sbin/rx1950-blue" \

@@ -55,6 +55,10 @@ source)
     done
     require_line '# CONFIG_MMC_S3C_DMA is not set' "$kcfg" 'RX1950 SD DMA must remain disabled'
     require_line '# CONFIG_MTD_BLOCK is not set' "$kcfg" 'internal NAND block access must remain disabled'
+    require_line '# CONFIG_IP_PNP is not set' "$kcfg" 'unused kernel IP autoconfiguration is enabled'
+    require_line '# CONFIG_IPV6 is not set' "$kcfg" 'unused IPv6 stack is enabled'
+    require_line '# CONFIG_EXT2_FS is not set' "$kcfg" 'unused ext2 driver is enabled'
+    require_line '# CONFIG_MSDOS_FS is not set' "$kcfg" 'unused legacy FAT driver is enabled'
     require_line 'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"' "$kcfg" 'regulatory database is not embedded in the kernel'
     require_line 'CONFIG_EXTRA_FIRMWARE_DIR="firmware"' "$kcfg" 'kernel firmware source directory changed'
 
@@ -102,7 +106,7 @@ source)
 
     for req in \
         BR2_PACKAGE_KMOD=y BR2_PACKAGE_KMOD_TOOLS=y BR2_PACKAGE_IW=y \
-        BR2_PACKAGE_WPA_SUPPLICANT=y BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y \
+        BR2_PACKAGE_WPA_SUPPLICANT=y \
         BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y BR2_PACKAGE_CA_CERTIFICATES=y \
         BR2_PACKAGE_WIRELESS_REGDB=y \
         BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y BR2_PACKAGE_LIBCURL_CURL=y \
@@ -115,8 +119,7 @@ source)
         BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
         BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
         BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
-        BR2_PACKAGE_RX1950_SHELL=y \
-        BR2_PACKAGE_GPE_CONF_RX1950=y BR2_PACKAGE_TRIGGERHAPPY=y \
+        BR2_PACKAGE_JWM=y BR2_PACKAGE_TRIGGERHAPPY=y \
         BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XEDIT=y BR2_PACKAGE_XAPP_XSET=y \
         BR2_PACKAGE_DIALOG=y BR2_PACKAGE_XTERM=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
@@ -124,7 +127,8 @@ source)
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
     require_line 'CONFIG_NTPD=y' "$busybox_fragment" 'BusyBox NTP client is disabled'
     require_line 'CONFIG_TIMEOUT=y' "$busybox_fragment" 'BusyBox timeout is required for bounded radio health checks'
-    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="512M"' "$rcfg" 'rootfs seed size is not 512 MiB'
+    require_line '# CONFIG_CROND is not set' "$busybox_fragment" 'idle BusyBox crond must remain disabled'
+    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="128M"' "$rcfg" 'rootfs seed size is not 128 MiB'
     if grep -Fq 'BR2_PACKAGE_CURL=y' "$rcfg"; then die 'legacy Buildroot BR2_PACKAGE_CURL must not be used'; fi
 
     require_fragment '/proc/self/mountinfo' "$grow" 'root grower still relies on /dev/root alias'
@@ -134,7 +138,7 @@ source)
     require_fragment 'echo lzo-rle > /sys/block/zram0/comp_algorithm' "$zram" 'zram does not use the ARM9-friendly lzo-rle compressor'
     require_fragment 'ptmxmode=0666' "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/fstab" 'devpts does not permit PTY allocation'
     require_fragment "sset 'Master Playback Switch' on" "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S30alsa" 'UDA1380 master output is not unmuted at boot'
-    require_fragment 'rx1950-usb-dhcp' "$usb" 'bounded USB DHCP supervisor is not started'
+    require_fragment 'rx1950-usb-dhcp' "$usb" 'bounded USB DHCP client is not started'
     require_fragment '192.168.7.2/24' "$usb" 'fixed USB recovery address lost'
     require_fragment 'ip route replace default' "$dhcp" 'USB default route handling missing'
     require_fragment 'rx1950-time-sync' "$time_sync" 'boot-time NTP synchronization is not started'
@@ -153,31 +157,30 @@ source)
     require_fragment 'echo none > "$LED/trigger"' "$blue" 'Blue LED cannot return to manual mode in diagnostic independent mode'
     require_fragment 'rx1950-wlan start historical' "$wlan_init" 'boot WLAN path does not follow the historical RX1950 wiring'
     require_fragment 'Xorg :0 -config /etc/X11/xorg.conf' "$xserver" 'Xorg framebuffer server is not started'
-    require_fragment 'rx1950-shell' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'minimal PDA shell is not started'
-    if grep -Eq 'matchbox-(window-manager|desktop|panel)|mb-applet-' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox"; then
-        die 'legacy multi-process Matchbox desktop stack is still started'
-    fi
-    require_fragment 'MATCHBOX_THEME' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" 'persistent Matchbox theme selection is missing'
-    require_fragment 'exec gpe-conf "$@"' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-settings-launcher" 'settings launcher does not open the graphical control center'
-    require_fragment 'exec gpe-conf wifi' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" 'Wi-Fi launcher does not open the native graphical applet'
+    require_fragment 'jwm -f /etc/jwm/system.jwmrc' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50jwm" 'JWM session is not started'
+    require_fragment '<Menu label="Settings">' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/jwm/system.jwmrc" 'JWM settings menu is missing'
+    require_fragment 'rx1950-jwm-status-menu' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/jwm/system.jwmrc" 'dynamic system status menu is missing'
+    require_fragment 'rx1950-button-settings' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/jwm/system.jwmrc" 'hardware button settings are missing'
+    require_fragment 'rx1950-wifi-ui' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" 'Wi-Fi launcher does not open the on-demand manager'
     require_fragment 'key-reload)' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-control" 'button assignments are not reloaded atomically'
     require_fragment 'user root' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/default/triggerhappy" 'hardware button actions cannot control the root-owned PDA session'
     require_fragment '$(PNG_LIBS) -lXrender' "$keyboard_xrender" 'Matchbox keyboard Cairo backend is not linked with Xrender'
     if grep -Fq 'BR2_PACKAGE_LEAFPAD=y' "$rcfg"; then die 'unverifiable legacy Leafpad source must not be enabled'; fi
-    if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox"; then
+    if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50jwm"; then
         die 'on-screen keyboard must not occupy the desktop at boot'
     fi
     require_fragment 'udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q' "$wlan" 'WLAN DHCP is not bounded'
     require_fragment 'wpa_supplicant -B -D wext' "$wlan" 'WLAN must use the ACX100-compatible WEXT backend'
     for gui_script in \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50matchbox" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50jwm" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/mb-applet-xterm-wrapper.sh" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-keyboard" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-launch" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-settings-launcher" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-control" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-settings" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-button-settings" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-jwm-status-menu" \
+        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-power-menu" \
         "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-wifi-ui"; do
         test -s "$gui_script" || die "GUI script is missing: $gui_script"
         sh -n "$gui_script" || die "GUI script has invalid shell syntax: $gui_script"
@@ -203,6 +206,10 @@ kernel)
     done
     require_line '# CONFIG_MMC_S3C_DMA is not set' "$cfg" 'generated kernel unexpectedly enabled S3C MCI DMA'
     require_line '# CONFIG_MTD_BLOCK is not set' "$cfg" 'generated kernel exposes internal NAND as a block device'
+    require_line '# CONFIG_IP_PNP is not set' "$cfg" 'generated kernel unexpectedly enabled IP autoconfiguration'
+    require_line '# CONFIG_IPV6 is not set' "$cfg" 'generated kernel unexpectedly enabled IPv6'
+    require_line '# CONFIG_EXT2_FS is not set' "$cfg" 'generated kernel unexpectedly enabled ext2'
+    require_line '# CONFIG_MSDOS_FS is not set' "$cfg" 'generated kernel unexpectedly enabled legacy FAT'
     require_line 'CONFIG_CMDLINE_FROM_BOOTLOADER=y' "$cfg" 'generated kernel ignores the HaRET normal/recovery command line'
     require_line '# CONFIG_CMDLINE_FORCE is not set' "$cfg" 'generated kernel forces the SD-root command line and breaks RAM recovery'
     require_line 'CONFIG_BINFMT_SCRIPT=y' "$cfg" 'generated kernel cannot execute the recovery /init script'
@@ -217,7 +224,7 @@ rootfs)
     cfg="${2:-${OUTPUT_DIR}/buildroot.config}"
     for req in \
         BR2_PACKAGE_KMOD=y BR2_PACKAGE_KMOD_TOOLS=y BR2_PACKAGE_IW=y \
-        BR2_PACKAGE_WPA_SUPPLICANT=y BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y \
+        BR2_PACKAGE_WPA_SUPPLICANT=y \
         BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y BR2_PACKAGE_CA_CERTIFICATES=y \
         BR2_PACKAGE_WIRELESS_REGDB=y \
         BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y BR2_PACKAGE_LIBCURL_CURL=y \
@@ -231,13 +238,12 @@ rootfs)
         BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
         BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
         BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
-        BR2_PACKAGE_RX1950_SHELL=y \
-        BR2_PACKAGE_GPE_CONF_RX1950=y BR2_PACKAGE_TRIGGERHAPPY=y \
+        BR2_PACKAGE_JWM=y BR2_PACKAGE_TRIGGERHAPPY=y \
         BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XEDIT=y BR2_PACKAGE_XAPP_XSET=y; do
         require_line "$req" "$cfg" "generated rootfs dropped: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
-    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="512M"' "$cfg" 'generated rootfs seed is not 512 MiB'
+    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="128M"' "$cfg" 'generated rootfs seed is not 128 MiB'
     ;;
 
 image)
@@ -252,10 +258,11 @@ image)
         /usr/sbin/rx1950-usb-dhcp /usr/bin/amixer /usr/bin/arecord \
         /usr/sbin/alsactl /usr/bin/speaker-test /usr/bin/xinput \
         /usr/bin/xinput_calibrator \
-        /usr/bin/gpe-conf /usr/sbin/rx1950-control /usr/sbin/thd \
+        /usr/bin/jwm /usr/sbin/rx1950-control /usr/sbin/thd \
+        /usr/sbin/rx1950-button-settings \
         /usr/bin/xcalc /usr/bin/xedit /usr/bin/xset /usr/bin/rx1950-launch \
         /etc/triggerhappy/triggers.d/rx1950.conf /etc/default/triggerhappy \
-        /etc/default/rx1950-power /etc/default/rx1950-ui \
+        /etc/default/rx1950-power /etc/jwm/system.jwmrc /etc/jwm/theme \
         /usr/share/applications/rx1950-calculator.desktop \
         /usr/share/applications/rx1950-editor.desktop \
         /usr/sbin/rx1950-timezone /usr/sbin/rx1950-sensors /usr/sbin/rx1950-wlan \
@@ -264,7 +271,7 @@ image)
         /usr/share/udhcpc/rx1950-usb.script /etc/init.d/S05grow-root \
         /etc/init.d/S02clock-sanity /etc/init.d/S10kernel-modules \
         /etc/init.d/S20zram /etc/init.d/S30alsa /etc/init.d/S35usb-gadget \
-        /etc/init.d/S38time-sync /etc/init.d/S40wlan /etc/init.d/S48xserver \
+        /etc/init.d/S38time-sync /etc/init.d/S40wlan /etc/init.d/S48xserver /etc/init.d/S50jwm \
         /usr/bin/Xorg /usr/lib/xorg/modules/drivers/fbdev_drv.so \
         /usr/lib/xorg/modules/input/evdev_drv.so /etc/X11/xorg.conf \
         /lib/firmware/regulatory.db /lib/firmware/regulatory.db.p7s \

@@ -41,15 +41,16 @@ for path in \
     /usr/sbin/rx1950-timezone \
     /usr/sbin/rx1950-wlan \
     /usr/sbin/rx1950-wlan-firmware \
-    /usr/sbin/rx1950-settings \
     /usr/sbin/rx1950-wifi-ui \
+    /usr/sbin/rx1950-jwm-status-menu \
+    /usr/sbin/rx1950-power-menu \
+    /usr/sbin/rx1950-button-settings \
     /usr/bin/rx1950-keyboard \
     /usr/bin/rx1950-launch \
-    /usr/bin/rx1950-settings-launcher \
     /usr/bin/rx1950-wifi-launcher \
     /usr/bin/dialog \
     /usr/bin/xterm \
-    /usr/bin/gpe-conf \
+    /usr/bin/jwm \
     /usr/bin/xcalc \
     /usr/bin/xset \
     /usr/bin/xedit \
@@ -57,12 +58,11 @@ for path in \
     /usr/sbin/rx1950-control \
     /etc/default/triggerhappy \
     /etc/default/rx1950-power \
-    /etc/default/rx1950-ui \
+    /etc/jwm/system.jwmrc \
+    /etc/jwm/theme \
     /etc/triggerhappy/triggers.d/rx1950.conf \
     /usr/share/applications/rx1950-calculator.desktop \
     /usr/share/applications/rx1950-editor.desktop \
-    /usr/bin/rx1950-shell \
-    /usr/share/applications/rx1950-settings.desktop \
     /usr/share/applications/rx1950-wifi.desktop \
     /usr/lib/rx1950/build-epoch \
     /usr/lib/rx1950/build-date-utc \
@@ -79,7 +79,7 @@ for path in \
     /etc/init.d/S38time-sync \
     /etc/init.d/S40wlan \
     /etc/init.d/S48xserver \
-    /etc/init.d/S50matchbox \
+    /etc/init.d/S50jwm \
     /usr/bin/Xorg \
     /usr/bin/amixer \
     /usr/bin/arecord \
@@ -118,7 +118,7 @@ grep -Eq '^DROPBEAR_ARGS="[^"]*-B[^"]*"$' "${tmp}/dropbear" ||
 
 extract /etc/init.d/S35usb-gadget "${tmp}/S35usb-gadget"
 grep -Fq 'rx1950-usb-dhcp' "${tmp}/S35usb-gadget" ||
-    die 'bounded USB DHCP supervisor is not enabled'
+    die 'bounded USB DHCP client is not enabled'
 extract /etc/init.d/S38time-sync "${tmp}/S38time-sync"
 grep -Fq 'rx1950-time-sync' "${tmp}/S38time-sync" ||
     die 'boot-time NTP synchronization is not enabled'
@@ -127,14 +127,13 @@ extract /etc/init.d/S20zram "${tmp}/S20zram"
 grep -Fq 'lzo-rle' "${tmp}/S20zram" || die 'zram compressor is not lzo-rle'
 extract /etc/init.d/S48xserver "${tmp}/S48xserver"
 grep -Fq 'Xorg :0' "${tmp}/S48xserver" || die 'Xorg is not started at boot'
-extract /etc/init.d/S50matchbox "${tmp}/S50matchbox"
-grep -Fq 'rx1950-shell' "${tmp}/S50matchbox" || die 'minimal PDA shell is not started'
-if grep -Eq 'matchbox-(window-manager|desktop|panel)|mb-applet-' "${tmp}/S50matchbox"; then
-    die 'legacy multi-process Matchbox desktop stack is still started'
-fi
-if grep -Eq '^[[:space:]]*(rx1950-keyboard|matchbox-keyboard)([[:space:]]+show)?[[:space:]]*&' "${tmp}/S50matchbox"; then
+extract /etc/init.d/S50jwm "${tmp}/S50jwm"
+grep -Fq 'jwm -f /etc/jwm/system.jwmrc' "${tmp}/S50jwm" || die 'JWM is not started'
+if grep -Eq '^[[:space:]]*(rx1950-keyboard|matchbox-keyboard)([[:space:]]+show)?[[:space:]]*&' "${tmp}/S50jwm"; then
     die 'on-screen keyboard is still started unconditionally'
 fi
+extract /etc/jwm/system.jwmrc "${tmp}/system.jwmrc"
+grep -Fq '<Menu label="Settings">' "${tmp}/system.jwmrc" || die 'JWM settings menu is missing'
 extract /usr/bin/rx1950-keyboard "${tmp}/rx1950-keyboard"
 grep -Fq 'matchbox-keyboard "$LAYOUT"' "${tmp}/rx1950-keyboard" ||
     die 'on-demand keyboard helper does not launch matchbox-keyboard'

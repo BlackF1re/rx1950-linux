@@ -1,9 +1,0 @@
-config BR2_PACKAGE_RX1950_SHELL
-	bool "rx1950-shell"
-	depends on BR2_PACKAGE_XORG7
-	depends on BR2_USE_MMU
-	select BR2_PACKAGE_XLIB_LIBX11
-	help
-	  Single-process, Xlib-only window manager, home screen, launcher,
-	  task strip and status panel for the HP iPAQ rx1950. It deliberately
-	  avoids GTK, Xft, icon themes, D-Bus and resident helpers.
