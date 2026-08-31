@@ -9,8 +9,6 @@ include $(sort $(wildcard $(BR2_EXTERNAL_RX1950_PATH)/package/*/*.mk))
 # the on-screen keyboard. These overrides are deliberately later than the
 # upstream package defaults.
 XSERVER_XORG_SERVER_CONF_OPTS += \
-	--disable-config-udev \
-	--disable-config-udev-kms \
 	--disable-dbe \
 	--disable-dga \
 	--disable-dmx \
