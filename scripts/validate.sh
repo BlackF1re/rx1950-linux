@@ -164,9 +164,10 @@ case "${1:-source}" in
     test -x "${ROOT_DIR}/scripts/recovery-init.sh"
     test -x "${ROOT_DIR}/scripts/recovery-write.sh"
     grep -Fq '( sleep 2700; reboot -f ) &' "${ROOT_DIR}/scripts/recovery-init.sh"
-    grep -Fqx 'dropbear -E -B -R' "${ROOT_DIR}/scripts/recovery-init.sh"
-    grep -Fqx 'root::0:0:99999:7:::' "${ROOT_DIR}/scripts/build-recovery.sh"
-    ! grep -Fq 'authorized_keys' "${ROOT_DIR}/scripts/recovery-init.sh"
+    grep -Fqx 'CONFIG_NC=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
+    grep -Fqx 'CONFIG_NC_SERVER=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
+    grep -Fqx 'if nc -l -p 31337 | /usr/sbin/rx1950-recovery-write "$image_bytes" "$image_sha"; then' "${ROOT_DIR}/scripts/recovery-init.sh"
+    ! grep -Fq 'dropbear' "${ROOT_DIR}/scripts/recovery-init.sh"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
     ! grep -q '^set INITRD ' "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
     grep -Fq 'zImage-recovery' "${ROOT_DIR}/tools/update-rx1950.sh"
@@ -230,6 +231,8 @@ case "${1:-source}" in
     trap 'rm -f "${busybox_elf}" "${inittab_file}"' EXIT
     debugfs -R "dump -p /bin/busybox ${busybox_elf}" "${OUTPUT_DIR}/rootfs.ext2" >/dev/null 2>&1 ||
       die "cannot extract BusyBox from rootfs for ABI verification"
+    strings "${busybox_elf}" | grep -qx 'nc' ||
+      die "BusyBox lacks the recovery netcat applet"
     readelf -h "${busybox_elf}" | grep -Eq 'Machine:[[:space:]]+ARM' ||
       die "BusyBox is not an ARM ELF"
     readelf -h "${busybox_elf}" | grep -Eq 'Flags:.*Version5 EABI.*soft-float ABI' ||

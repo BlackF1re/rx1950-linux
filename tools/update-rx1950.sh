@@ -49,7 +49,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "${SOURCE}" ]] || { usage >&2; exit 2; }
 
-for command in gh plink pscp sha256sum xz awk; do
+for command in gh plink pscp sha256sum xz awk ncat; do
     command -v "${command}" >/dev/null || die "missing host command: ${command}"
 done
 
@@ -98,6 +98,8 @@ printf '%s  %s\n' "${recovery_sha}" "${recovery_kernel}" | sha256sum --check --s
     die 'downloaded recovery kernel checksum mismatch'
 raw_size=$(xz --robot --list "${image}" | awk -F '\t' '$1 == "totals" { print $5 }')
 [[ "${raw_size}" =~ ^[0-9]+$ ]] || die 'cannot determine uncompressed image size'
+expected_version=${image_name#rx1950-linux-}
+expected_version=${expected_version%.img.xz}
 # Both normal Linux and RAM recovery are deliberately open only through the
 # point-to-point USB cable. The SSH host key is pinned for each short session,
 # but no user password or client key exists in this appliance workflow.
@@ -124,31 +126,36 @@ fi
 
 pscp "${normal_scp_options[@]}" "${recovery_kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
 pscp "${normal_scp_options[@]}" "${recovery_startup}" "${remote[0]}:/mnt/boot/startup.update"
+printf '%s %s\n' "${raw_size}" "${raw_sha}" > "${temporary}/rx1950-update.manifest"
+pscp "${normal_scp_options[@]}" "${temporary}/rx1950-update.manifest" \
+    "${remote[0]}:/mnt/boot/rx1950-update.manifest"
 
 printf 'Entering passwordless RAM recovery through WM/HaRET...\n'
 plink "${normal_options[@]}" "${remote[0]}" \
     'cp /mnt/boot/startup.txt /mnt/boot/startup.normal.txt && mv /mnt/boot/startup.update /mnt/boot/startup.txt && sync && reboot' || true
-recovery_fingerprint=
-for _ in $(seq 1 120); do
+printf 'Waiting for the raw USB recovery receiver, then streaming and verifying the whole-card image...\n'
+sent=false
+for _ in $(seq 1 180); do
+    if xz --decompress --stdout "${image}" | ncat --send-only --idle-timeout 30 "${DEVICE}" 31337; then
+        sent=true
+        break
+    fi
     sleep 2
-    recovery_probe=$(plink -batch -ssh -pw '' "${remote[0]}" true 2>&1 || true)
-    recovery_fingerprint=$(printf '%s\n' "${recovery_probe}" | awk '/fingerprint is:/{getline; print $NF; exit}')
-    [[ "${recovery_fingerprint}" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || continue
-    recovery_options=(-batch -ssh -hostkey "${recovery_fingerprint}" -pw '')
-    if plink "${recovery_options[@]}" "${remote[0]}" 'test -e /etc/rx1950-recovery' 2>/dev/null; then break; fi
 done
-[[ -n "${recovery_fingerprint}" ]] || die 'RAM recovery did not expose an SSH host key'
-plink "${recovery_options[@]}" "${remote[0]}" 'test -e /etc/rx1950-recovery' ||
-    die 'RAM recovery did not become reachable; its unattended fallback will reboot to the normal image'
+${sent} || die 'RAM recovery did not accept the image stream; its unattended fallback will reboot to the normal image'
 
-printf 'Streaming and verifying the whole-card image...\n'
-# Dropbear on this ARM9 needs a short pause between sessions; without it the
-# next client can time out before the server banner is emitted.
-sleep 10
-xz --decompress --stdout "${image}" |
-    plink "${recovery_options[@]}" "${remote[0]}" "/usr/sbin/rx1950-recovery-write '${raw_size}' '${raw_sha}'" |
-    tee "${temporary}/write.log"
-grep -qx RX1950_UPDATE_VERIFIED "${temporary}/write.log" || die 'device did not confirm media verification'
-
-plink "${recovery_options[@]}" "${remote[0]}" 'sync; reboot -f' || true
-printf 'Update verified. WM will now start HaRET automatically.\n'
+# A successful recovery verifies the card itself and reboots.  Wait for the
+# freshly written normal system, pin its new host key, and verify its release
+# identity before reporting completion.
+for _ in $(seq 1 240); do
+    sleep 2
+    post_probe=$(plink -batch -ssh -pw '' "${remote[0]}" true 2>&1 || true)
+    post_fingerprint=$(printf '%s\n' "${post_probe}" | awk '/fingerprint is:/{getline; print $NF; exit}')
+    [[ "${post_fingerprint}" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || continue
+    if plink -batch -ssh -hostkey "${post_fingerprint}" -pw '' "${remote[0]}" \
+        "grep -Fqx 'VERSION_ID=\"${expected_version}\"' /etc/os-release"; then
+        printf 'Update verified; rx1950-linux %s is running.\n' "${expected_version}"
+        exit 0
+    fi
+done
+die 'image stream finished but the expected normal system did not return'

@@ -12,7 +12,7 @@ rescue_shell() {
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mount -t proc proc /proc || rescue_shell 'cannot mount proc'
 mount -t sysfs sysfs /sys || rescue_shell 'cannot mount sysfs'
-mkdir -p /etc/dropbear /var/run
+mkdir -p /var/run
 
 # Recovery is deliberately unattended. If the host disappears before it can
 # finish (bad cable, suspended laptop, failed SSH), return to WM and the normal
@@ -28,6 +28,16 @@ if [ -s /boot/startup.normal.txt ]; then
     mv /boot/startup.normal.txt /boot/startup.txt || rescue_shell 'cannot restore normal HaRET script'
     sync
 fi
+
+# Read the expected image identity before unmounting the card.  The host places
+# this manifest beside the one-shot recovery kernel while normal Linux is still
+# running; arbitrary USB input can therefore never select a different image.
+manifest=/boot/rx1950-update.manifest
+[ -s "$manifest" ] || rescue_shell 'missing update manifest'
+IFS=' ' read -r image_bytes image_sha extra < "$manifest"
+case "$image_bytes" in ''|*[!0-9]*) rescue_shell 'invalid update size';; esac
+case "$image_sha" in *[!0-9a-fA-F]*|'') rescue_shell 'invalid update checksum';; esac
+[ "${#image_sha}" -eq 64 ] && [ -z "${extra}" ] || rescue_shell 'invalid update manifest'
 umount /boot || rescue_shell 'boot partition is still busy'
 
 ip link set lo up
@@ -35,12 +45,15 @@ ip link set usb0 up || rescue_shell 'USB NCM interface is unavailable'
 ip addr flush dev usb0
 ip addr add 192.168.7.2/24 dev usb0 || rescue_shell 'cannot configure USB address'
 
-# Recovery has no user credentials: this service is intentionally open only on
-# the point-to-point USB link. Generate an ephemeral host key, so neither the
-# normal system's identity nor its root filesystem is needed while flashing.
-dropbear -E -B -R
-echo 'rx1950 cable-update recovery ready at 192.168.7.2' >/dev/tty0 2>/dev/null
-
+# SSH has been observed to corrupt encrypted packets in this tiny ARM9
+# initramfs.  Use a one-shot raw listener exclusively on the physical USB NCM
+# cable instead.  The receiver validates the complete card against the manifest
+# before rebooting; there are intentionally no passwords or client keys here.
+echo 'rx1950 cable-update recovery ready at 192.168.7.2:31337' >/dev/tty0 2>/dev/null
 while :; do
-    sleep 3600
+    if nc -l -p 31337 | /usr/sbin/rx1950-recovery-write "$image_bytes" "$image_sha"; then
+        sync
+        reboot -f
+    fi
+    sleep 1
 done
