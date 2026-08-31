@@ -127,6 +127,13 @@ jobs:
         with:
           path: .build/buildroot-output
           key: rx1950-buildroot-output-v7-${{ runner.os }}-${{ needs.plan.outputs.rootfs_cache }}
+          # A source change intentionally gives each verified state an exact
+          # key.  A previous state is nevertheless safe as a starting point:
+          # Buildroot regenerates .config and rebuilds only packages whose
+          # inputs changed.  Without this prefix fallback, a one-line Xorg
+          # option needlessly recompiles the complete root filesystem.
+          restore-keys: |
+            rx1950-buildroot-output-v7-${{ runner.os }}-
       - name: Restore Buildroot compiler cache
         uses: actions/cache@v5
         with:
