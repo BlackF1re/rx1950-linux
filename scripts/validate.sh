@@ -155,6 +155,8 @@ case "${1:-source}" in
     grep -qx 'CONFIG_KUSER_HELPERS=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_BLK_DEV_INITRD=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx 'CONFIG_RD_GZIP=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx 'CONFIG_CMDLINE_FROM_BOOTLOADER=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
+    grep -qx '# CONFIG_CMDLINE_FORCE is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"
     test -x "${ROOT_DIR}/scripts/build-recovery.sh"
     test -x "${ROOT_DIR}/scripts/recovery-init.sh"
     test -x "${ROOT_DIR}/scripts/recovery-write.sh"
