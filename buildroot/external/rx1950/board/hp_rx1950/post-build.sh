@@ -13,6 +13,11 @@ readonly ACX_MAIN_SHA256="4f05913c940c2455b267545b12d93ad81fa5eebb0cbee22a2c7588
 readonly ACX_RADIO0D_SHA256="6a4a7fbb24a328a88261bc2a507b2a0bf63c91e831e3f1a8caa4f6599b2215e6"
 readonly ACX_RADIO11_SHA256="e005a93a0b463e01edba2b79038b54c29a7932efee61c851a2ac644b8a4e5dd4"
 
+# xf86-input-evdev requires libudev at link time, but this fixed-hardware PDA
+# needs no userspace device policy. CONFIG_DEVTMPFS_MOUNT creates the nodes,
+# and xorg.conf names event0/event2 directly, so do not keep udevd resident.
+rm -f "${TARGET_DIR}/etc/init.d/S10udev"
+
 verify_sha256() {
     local file="$1" expected="$2"
     printf '%s  %s\n' "$expected" "$file" | sha256sum --check --status

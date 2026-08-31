@@ -117,8 +117,8 @@ validate_console_backlight_configs() {
         die "rootfs lost the local getty"
     grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${buildroot_config}" ||
         die "rootfs getty is not attached to framebuffer VT tty1"
-    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_DEVTMPFS=y' "${buildroot_config}" ||
-        die "rootfs device policy no longer uses zero-daemon kernel devtmpfs"
+    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y' "${buildroot_config}" ||
+        die "rootfs no longer provides the libudev dependency required by evdev"
     ! grep -q 'BR2_TARGET_GENERIC_GETTY_PORT="ttySAC0"' "${buildroot_config}" ||
         die "rootfs still respawns getty on unavailable ttySAC0"
 }
@@ -145,7 +145,10 @@ case "${1:-source}" in
     grep -Fq 'defined(__linux__)' "${ROOT_DIR}/buildroot/external/rx1950/patches/xterm/0001-linux-musl-fix-pty-session-and-retry.patch"
     grep -qx 'BR2_TARGET_GENERIC_GETTY=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'BR2_TARGET_GENERIC_GETTY_PORT="tty1"' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
-    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_DEVTMPFS=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx '# BR2_PACKAGE_EUDEV_MODULE_LOADING is not set' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -qx '# BR2_PACKAGE_EUDEV_ENABLE_HWDB is not set' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+    grep -Fq 'rm -f "${TARGET_DIR}/etc/init.d/S10udev"' "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/post-build.sh"
     ! grep -q 'ttySAC0' "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
     grep -qx 'CONFIG_ARCH_MULTI_V4T=y' "${ROOT_DIR}/kernel/rx1950_defconfig"
     grep -qx '# CONFIG_ARCH_MULTI_V7 is not set' "${ROOT_DIR}/kernel/rx1950_defconfig"

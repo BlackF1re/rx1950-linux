@@ -124,6 +124,10 @@ source)
         BR2_PACKAGE_DIALOG=y BR2_PACKAGE_XTERM=y; do
         require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
     done
+    require_line 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y' "$rcfg" 'libudev required by the evdev input driver is disabled'
+    require_line '# BR2_PACKAGE_EUDEV_MODULE_LOADING is not set' "$rcfg" 'unused eudev module loader is enabled'
+    require_line '# BR2_PACKAGE_EUDEV_ENABLE_HWDB is not set' "$rcfg" 'unused eudev hardware database is enabled'
+    require_fragment 'rm -f "${TARGET_DIR}/etc/init.d/S10udev"' "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/post-build.sh" 'resident udev daemon was not suppressed'
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
     require_line 'CONFIG_NTPD=y' "$busybox_fragment" 'BusyBox NTP client is disabled'
     require_line 'CONFIG_TIMEOUT=y' "$busybox_fragment" 'BusyBox timeout is required for bounded radio health checks'
@@ -243,6 +247,9 @@ rootfs)
         require_line "$req" "$cfg" "generated rootfs dropped: $req"
     done
     require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
+    require_line 'BR2_PACKAGE_EUDEV=y' "$cfg" 'generated rootfs dropped the libudev dependency required by evdev'
+    require_line '# BR2_PACKAGE_EUDEV_MODULE_LOADING is not set' "$cfg" 'generated rootfs enabled unused eudev module loading'
+    require_line '# BR2_PACKAGE_EUDEV_ENABLE_HWDB is not set' "$cfg" 'generated rootfs enabled the unused eudev hardware database'
     require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="128M"' "$cfg" 'generated rootfs seed is not 128 MiB'
     ;;
 

@@ -100,6 +100,8 @@ for path in \
     has "$path" || die "rootfs payload is missing ${path}"
 done
 
+has /etc/init.d/S10udev && die 'resident udev daemon startup remains in the rootfs'
+
 extract /lib/firmware/WLANGEN.BIN "${tmp}/WLANGEN.BIN"
 extract /lib/firmware/RADIO0d.BIN "${tmp}/RADIO0d.BIN"
 extract /lib/firmware/RADIO11.BIN "${tmp}/RADIO11.BIN"
