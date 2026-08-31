@@ -10,7 +10,7 @@ OUTPUT="${2:-${ROOT_DIR}/output/recovery.cpio.gz}"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 [[ -x "${TARGET_DIR}/bin/busybox" ]] || die 'Buildroot BusyBox is unavailable'
-strings "${TARGET_DIR}/bin/busybox" | grep -qx 'nc' ||
+[[ -x "${TARGET_DIR}/usr/bin/nc" ]] ||
     die 'Buildroot BusyBox lacks the recovery netcat applet'
 
 work="$(mktemp -d)"
