@@ -12,11 +12,15 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 [[ -x "${TARGET_DIR}/bin/busybox" ]] || die 'Buildroot BusyBox is unavailable'
 [[ -x "${TARGET_DIR}/usr/bin/nc" ]] ||
     die 'Buildroot BusyBox lacks the recovery netcat applet'
+[[ -x "${TARGET_DIR}/usr/bin/mkfifo" ]] ||
+    die 'Buildroot BusyBox lacks the recovery mkfifo applet'
 
 work="$(mktemp -d)"
 trap 'rm -rf -- "${work}"' EXIT
 root="${work}/root"
 mkdir -p "${root}"/{bin,sbin,usr/sbin,etc,dev,proc,sys,root,var/run,oldroot,lib}
+mknod -m 600 "${root}/dev/console" c 5 1
+mknod -m 666 "${root}/dev/null" c 1 3
 
 cp "${TARGET_DIR}/bin/busybox" "${root}/bin/busybox"
 cp "${ROOT_DIR}/scripts/recovery-init.sh" "${root}/init"
@@ -38,7 +42,7 @@ for binary in "${TARGET_DIR}/bin/busybox"; do
         sed -n 's/.*Shared library: \[\([^]]*\)\].*/\1/p')
 done
 
-for applet in awk cat cp dd grep head id ip mkdir mount mv nc reboot setsid sh sha256sum sleep sync umount; do
+for applet in awk cat cp dd grep head id ip mkdir mkfifo mount mv nc reboot setsid sh sha256sum sleep sync umount; do
     ln -s busybox "${root}/bin/${applet}"
 done
 : > "${root}/etc/rx1950-recovery"

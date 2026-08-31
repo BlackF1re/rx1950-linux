@@ -6,6 +6,36 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 
 die() { echo "recovery write: $*" >&2; exit 1; }
 
+render_progress() {
+    phase=$1 done=$2 total=$3
+    [ "$total" -gt 0 ] || return
+    percent=$((done * 100 / total))
+    [ "$percent" -le 100 ] || percent=100
+    filled=$((percent / 5))
+    empty=$((20 - filled))
+    printf '\r%s %3d%% [' "$phase" "$percent" >&2
+    while [ "$filled" -gt 0 ]; do printf '#' >&2; filled=$((filled - 1)); done
+    while [ "$empty" -gt 0 ]; do printf '.' >&2; empty=$((empty - 1)); done
+    printf ']' >&2
+}
+
+monitor_progress() {
+    phase=$1 pid=$2 total=$3
+    previous=-1
+    while kill -0 "$pid" 2>/dev/null; do
+        done=$(awk '$1 == "rchar:" { print $2; exit }' "/proc/$pid/io" 2>/dev/null || echo 0)
+        case "$done" in ''|*[!0-9]*) done=0;; esac
+        [ "$done" -le "$total" ] || done=$total
+        if [ "$done" -ne "$previous" ]; then
+            render_progress "$phase" "$done" "$total"
+            previous=$done
+        fi
+        sleep 1
+    done
+    render_progress "$phase" "$total" "$total"
+    printf '\n' >&2
+}
+
 [ "$#" -eq 2 ] || die 'usage: rx1950-recovery-write IMAGE_BYTES IMAGE_SHA256'
 bytes=$1
 expected=$2
@@ -23,13 +53,22 @@ capacity=$((sectors * 512))
 [ "$bytes" -le "$capacity" ] || die "image is larger than the SD card"
 
 echo "Writing $bytes bytes to /dev/mmcblk0; do not disconnect power." >&2
-dd of=/dev/mmcblk0 bs=1048576
+dd of=/dev/mmcblk0 bs=1048576 &
+writer=$!
+monitor_progress 'Writing   ' "$writer" "$bytes"
+wait "$writer"
 sync
 
 # The recovery endpoint is deliberately open on the physical USB cable; verify
 # the final media independently before reporting success.
-blocks=$(((bytes + 1048575) / 1048576))
-actual=$(dd if=/dev/mmcblk0 bs=1048576 count="$blocks" 2>/dev/null |
-    head -c "$bytes" | sha256sum | awk '{print $1}')
+[ $((bytes % 512)) -eq 0 ] || die 'image size is not sector aligned'
+sectors=$((bytes / 512))
+checksum_file=/tmp/rx1950-update.sha256
+dd if=/dev/mmcblk0 bs=512 count="$sectors" 2>/dev/null |
+    sha256sum > "$checksum_file" &
+hasher=$!
+monitor_progress 'Verifying ' "$hasher" "$bytes"
+wait "$hasher"
+actual=$(awk '{print $1}' "$checksum_file")
 [ "$actual" = "$expected" ] || die "media verification failed: $actual"
 echo 'RX1950_UPDATE_VERIFIED'

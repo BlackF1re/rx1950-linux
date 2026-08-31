@@ -4,6 +4,11 @@
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH HOME=/root
 
+# The kernel opens this node before it invokes /init.  Keeping it in the
+# initramfs, then explicitly adopting it, makes diagnostics and progress
+# visible even before devtmpfs is mounted.
+exec </dev/console >/dev/console 2>&1
+
 rescue_shell() {
     echo "recovery error: $*" >/dev/tty0 2>/dev/null
     exec setsid sh -c 'exec sh </dev/tty0 >/dev/tty0 2>&1'
