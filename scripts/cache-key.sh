@@ -36,6 +36,12 @@ case "${1:-}" in
             canonical_kconfig "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
             canonical_build_file "${ROOT_DIR}/buildroot/external/rx1950/Config.in"
             canonical_build_file "${ROOT_DIR}/buildroot/external/rx1950/external.mk"
+            while IFS= read -r package_file; do
+                printf 'package=%s\n' "${package_file#"${ROOT_DIR}/"}"
+                canonical_build_file "${package_file}"
+            done < <(find "${ROOT_DIR}/buildroot/external/rx1950/package" -type f \
+                \( -name 'Config.in' -o -name '*.mk' -o -name '*.hash' \) \
+                -print | LC_ALL=C sort)
             if [[ -d "${ROOT_DIR}/buildroot/external/rx1950/patches" ]]; then
                 while IFS= read -r patch_file; do
                     printf 'patch=%s\n' "${patch_file#"${ROOT_DIR}/"}"

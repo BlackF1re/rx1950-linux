@@ -128,10 +128,13 @@ jobs:
           path: .build/buildroot-output
           key: rx1950-buildroot-output-v7-${{ runner.os }}-${{ needs.plan.outputs.rootfs_cache }}
       - name: Restore Buildroot compiler cache
-        uses: actions/cache@v5
+        id: compiler-cache
+        uses: actions/cache/restore@v5
         with:
           path: ~/.buildroot-ccache
-          key: rx1950-buildroot-ccache-v1-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat
+          key: rx1950-buildroot-ccache-v2-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat-${{ needs.plan.outputs.rootfs_cache }}
+          restore-keys: |
+            rx1950-buildroot-ccache-v2-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat-
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential bc bison flex cpio file rsync curl wget unzip e2fsprogs python3
       - name: Build root filesystem
@@ -151,6 +154,12 @@ jobs:
         with:
           path: .build/buildroot-output
           key: rx1950-buildroot-output-v7-${{ runner.os }}-${{ needs.plan.outputs.rootfs_cache }}
+      - name: Save updated Buildroot compiler cache
+        if: always() && steps.rootfs-build.outcome == 'success' && steps.compiler-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.buildroot-ccache
+          key: rx1950-buildroot-ccache-v2-${{ runner.os }}-2025.02.2-arm920t-musl-softfloat-${{ needs.plan.outputs.rootfs_cache }}
       - name: Build package feed from verified base state
         shell: bash
         run: |

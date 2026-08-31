@@ -26,6 +26,8 @@ cp "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig" \
    "${temporary}/buildroot/external/rx1950/configs/"
 cp -R "${ROOT_DIR}/buildroot/external/rx1950/patches" \
    "${temporary}/buildroot/external/rx1950/"
+cp -R "${ROOT_DIR}/buildroot/external/rx1950/package" \
+   "${temporary}/buildroot/external/rx1950/"
 
 printf '\n# cache-key comment probe\n' >> "${temporary}/buildroot/external/rx1950/configs/rx1950_defconfig"
 printf '\n# cache-key comment probe\n' >> "${temporary}/buildroot/external/rx1950/external.mk"
@@ -45,6 +47,12 @@ sed -i 's/^BR2_CCACHE=y$/# BR2_CCACHE is not set/' \
     "${temporary}/buildroot/external/rx1950/configs/rx1950_defconfig"
 config_key="$(RX1950_CACHE_ROOT="${temporary}" "${ROOT_DIR}/scripts/cache-key.sh" rootfs)"
 [[ "${config_key}" != "${rootfs_key}" ]] || die 'a real Kconfig change does not invalidate rootfs state'
+cp "${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig" \
+   "${temporary}/buildroot/external/rx1950/configs/"
+printf '\nJWM_CONF_OPTS += --disable-debug\n' >> \
+    "${temporary}/buildroot/external/rx1950/package/jwm/jwm.mk"
+package_key="$(RX1950_CACHE_ROOT="${temporary}" "${ROOT_DIR}/scripts/cache-key.sh" rootfs)"
+[[ "${package_key}" != "${rootfs_key}" ]] || die 'package build metadata does not invalidate rootfs state'
 
 require_text 'rootfs_cache: ${{ steps.meta.outputs.rootfs_cache }}' "${WORKFLOW}" \
     'Plan does not export the semantic rootfs cache key'
@@ -54,8 +62,12 @@ require_text 'key: rx1950-buildroot-output-v7-${{ runner.os }}-${{ needs.plan.ou
     'Buildroot output does not use the semantic exact key'
 require_text "hashFiles('scripts/sources.lock.sh')" "${WORKFLOW}" \
     'download caches are not keyed by the pinned source lock'
-require_text 'key: rx1950-buildroot-ccache-v1-' "${WORKFLOW}" \
+require_text 'key: rx1950-buildroot-ccache-v2-' "${WORKFLOW}" \
     'Buildroot compiler cache is missing'
+require_text 'restore-keys: |' "${WORKFLOW}" \
+    'Buildroot compiler cache cannot reuse a prior compatible population'
+require_text 'steps.compiler-cache.outputs.cache-hit' "${WORKFLOW}" \
+    'Buildroot compiler cache is not saved under new semantic keys'
 require_text 'jwm-dirclean' \
     "${ROOT_DIR}/scripts/build.sh" \
     'local packages can be hidden by a restored Buildroot state'
