@@ -214,6 +214,8 @@ validate_kernel_config() {
         'CONFIG_UNUSED_BOARD_FILES=y'
         'CONFIG_BLK_DEV_INITRD=y'
         'CONFIG_RD_GZIP=y'
+        'CONFIG_BINFMT_ELF=y'
+        'CONFIG_BINFMT_SCRIPT=y'
         'CONFIG_MODULES=y'
         'CONFIG_FW_LOADER=y'
         'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"'

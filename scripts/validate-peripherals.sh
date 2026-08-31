@@ -205,6 +205,7 @@ kernel)
     require_line '# CONFIG_MTD_BLOCK is not set' "$cfg" 'generated kernel exposes internal NAND as a block device'
     require_line 'CONFIG_CMDLINE_FROM_BOOTLOADER=y' "$cfg" 'generated kernel ignores the HaRET normal/recovery command line'
     require_line '# CONFIG_CMDLINE_FORCE is not set' "$cfg" 'generated kernel forces the SD-root command line and breaks RAM recovery'
+    require_line 'CONFIG_BINFMT_SCRIPT=y' "$cfg" 'generated kernel cannot execute the recovery /init script'
     require_line 'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"' "$cfg" 'generated kernel does not embed regulatory.db'
     require_line 'CONFIG_EXTRA_FIRMWARE_DIR="firmware"' "$cfg" 'generated kernel firmware directory changed'
     test -s "${OUTPUT_DIR}/kernel-modules.tar" || die 'kernel WLAN module bundle missing'
