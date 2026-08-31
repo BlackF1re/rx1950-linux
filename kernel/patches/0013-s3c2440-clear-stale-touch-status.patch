@@ -1,0 +1,50 @@
+diff --git a/drivers/input/touchscreen/s3c2410_ts.c b/drivers/input/touchscreen/s3c2410_ts.c
+--- a/drivers/input/touchscreen/s3c2410_ts.c
++++ b/drivers/input/touchscreen/s3c2410_ts.c
+@@ -25,6 +25,7 @@
+ #define	S3C2410_ADCDLY			(0x08)
+ #define	S3C2410_ADCDAT0			(0x0C)
+ #define	S3C2410_ADCDAT1			(0x10)
++#define	S3C2440_ADCUPDN			(0x14)
+ #define	S3C64XX_ADCUPDN			(0x14)
+ #define	S3C2443_ADCMUX			(0x18)
+ #define	S3C64XX_ADCCLRINT		(0x18)
+@@ -66,6 +67,7 @@
+ 			 S3C2410_ADCTSC_AUTO_PST | \
+ 			 S3C2410_ADCTSC_XY_PST(0))
+ #define FEAT_PEN_IRQ	(1 << 0)	/* HAS ADCCLRINTPNDNUP */
++#define FEAT_CLEAR_ADCUPDN (1 << 1)	/* S3C2440 has latched pen status */
+ 
+ /* Per-touchscreen data. */
+ /**
+@@ -305,7 +307,12 @@ static int s3c2410ts_probe(struct platform_device *pdev)
+ 		writel(info->delay & 0xffff, ts.io + S3C2410_ADCDLY);
+ 
+ 	writel(WAIT4INT | INT_DOWN, ts.io + S3C2410_ADCTSC);
+ 
++	/* HaRET may leave both S3C2440 pen transition flags asserted. */
++	if (platform_get_device_id(pdev)->driver_data &
++	    FEAT_CLEAR_ADCUPDN)
++		writel(0x0, ts.io + S3C2440_ADCUPDN);
++
+ 	input_dev = input_allocate_device();
+ 	if (!input_dev) {
+ 		dev_err(dev, "Unable to allocate the input device !!\n");
+@@ -398,6 +406,9 @@ static int s3c2410ts_resume(struct device *dev)
+ 		writel(info->delay & 0xffff, ts.io + S3C2410_ADCDLY);
+ 
+ 	writel(WAIT4INT | INT_DOWN, ts.io + S3C2410_ADCTSC);
++	if (ts.features & FEAT_CLEAR_ADCUPDN)
++		writel(0x0, ts.io + S3C2440_ADCUPDN);
++
+ 
+ 	return 0;
+ }
+@@ -411,6 +422,6 @@ static const struct dev_pm_ops s3c_ts_pmops = {
+ static const struct platform_device_id s3cts_driver_ids[] = {
+ 	{ "s3c2410-ts", 0 },
+-	{ "s3c2440-ts", 0 },
++	{ "s3c2440-ts", FEAT_CLEAR_ADCUPDN },
+ 	{ "s3c64xx-ts", FEAT_PEN_IRQ },
+ 	{ }
+ };
