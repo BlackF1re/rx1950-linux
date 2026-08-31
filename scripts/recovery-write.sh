@@ -26,7 +26,8 @@ echo "Writing $bytes bytes to /dev/mmcblk0; do not disconnect power." >&2
 dd of=/dev/mmcblk0 bs=1048576
 sync
 
-# SSH authenticates the transport; verify the final media independently too.
+# The recovery endpoint is deliberately open on the physical USB cable; verify
+# the final media independently before reporting success.
 blocks=$(((bytes + 1048575) / 1048576))
 actual=$(dd if=/dev/mmcblk0 bs=1048576 count="$blocks" 2>/dev/null |
     head -c "$bytes" | sha256sum | awk '{print $1}')

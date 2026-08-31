@@ -17,7 +17,6 @@ esac
 REPOSITORY=BlackF1re/rx1950-linux
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE=192.168.7.2
-PASSWORD=${RX1950_PASSWORD-rx1950}
 SOURCE=
 VALUE=
 ASSUME_YES=false
@@ -50,7 +49,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "${SOURCE}" ]] || { usage >&2; exit 2; }
 
-for command in gh plink pscp ssh-keygen sha256sum xz awk; do
+for command in gh plink pscp sha256sum xz awk; do
     command -v "${command}" >/dev/null || die "missing host command: ${command}"
 done
 
@@ -99,54 +98,20 @@ printf '%s  %s\n' "${recovery_sha}" "${recovery_kernel}" | sha256sum --check --s
     die 'downloaded recovery kernel checksum mismatch'
 raw_size=$(xz --robot --list "${image}" | awk -F '\t' '$1 == "totals" { print $5 }')
 [[ "${raw_size}" =~ ^[0-9]+$ ]] || die 'cannot determine uncompressed image size'
-key_base=${HOME}/.ssh/rx1950_update_rsa
-key=${key_base}
-key_pub=${key_base}.pub
-if [[ ! -s "${key}" || ! -s "${key_pub}" ]]; then
-    mkdir -p "${HOME}/.ssh"
-    # Plink reads traditional PEM RSA keys directly. More importantly, this
-    # avoids the Dropbear 2025.88/Ed25519 post-authentication corruption seen
-    # in the RAM recovery on the ARM9.
-    ssh-keygen -q -t rsa -b 3072 -m PEM -N '' -C 'rx1950 cable updater' -f "${key}"
-fi
-
-# Pin the key actually presented on the dedicated cable before using the
-# factory engineering password to install our update-only transport key.
-probe=$(plink -batch -ssh -pw "${PASSWORD}" root@"${DEVICE}" true 2>&1 || true)
+# Both normal Linux and RAM recovery are deliberately open only through the
+# point-to-point USB cable. The SSH host key is pinned for each short session,
+# but no user password or client key exists in this appliance workflow.
+probe=$(plink -batch -ssh -pw '' root@"${DEVICE}" true 2>&1 || true)
 fingerprint=$(printf '%s\n' "${probe}" | awk '/fingerprint is:/{getline; print $NF; exit}')
 [[ "${fingerprint}" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] ||
     die 'rx1950 SSH is not reachable over USB or its host key cannot be read'
 
 printf 'Cable device host key: %s\n' "${fingerprint}"
 
-# Development images used "rx1950", while a freshly assembled image has the
-# intentionally blank local root password. Try the configured/current value
-# first, then the factory image value, so a successful update cannot lock out
-# the next cable update. RX1950_PASSWORD overrides the first candidate.
-device_password=
-authenticated=false
-for candidate in "${PASSWORD}" ''; do
-    [[ "${authenticated}" = false ]] || break
-    [[ -n "${device_password}" && "${candidate}" = "${device_password}" ]] && continue
-    if plink -batch -ssh -hostkey "${fingerprint}" -pw "${candidate}" \
-        root@"${DEVICE}" true >/dev/null 2>&1; then
-        device_password=${candidate}
-        authenticated=true
-    fi
-done
-[[ "${authenticated}" = true ]] ||
-    die 'neither the configured nor the fresh-image root password was accepted'
-
-pscp -scp -batch -hostkey "${fingerprint}" -pw "${device_password}" "${key_pub}" \
-    "root@${DEVICE}:/tmp/rx1950_update.pub" >/dev/null
-plink -batch -hostkey "${fingerprint}" -pw "${device_password}" root@"${DEVICE}" \
-    'mkdir -p /root/.ssh; chmod 700 /root/.ssh; touch /root/.ssh/authorized_keys; grep -qxF "$(cat /tmp/rx1950_update.pub)" /root/.ssh/authorized_keys || cat /tmp/rx1950_update.pub >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys; rm -f /tmp/rx1950_update.pub'
-
 remote=(root@"${DEVICE}")
-plink_password_options=(-batch -ssh -hostkey "${fingerprint}" -pw "${device_password}")
-pscp_password_options=(-scp -batch -hostkey "${fingerprint}" -pw "${device_password}")
-plink_key_options=(-batch -ssh -hostkey "${fingerprint}" -i "${key}")
-plink "${plink_password_options[@]}" "${remote[0]}" \
+normal_options=(-batch -ssh -hostkey "${fingerprint}" -pw '')
+normal_scp_options=(-scp -batch -hostkey "${fingerprint}" -pw '')
+plink "${normal_options[@]}" "${remote[0]}" \
     'test "$(cat /sys/class/power_supply/ac/online)" = 1' ||
     die 'external power is required for a whole-card update'
 
@@ -157,17 +122,23 @@ if ! ${ASSUME_YES}; then
     [[ "${confirmation}" = FLASH ]] || die 'update cancelled'
 fi
 
-pscp "${pscp_password_options[@]}" "${recovery_kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
-pscp "${pscp_password_options[@]}" "${recovery_startup}" "${remote[0]}:/mnt/boot/startup.update"
+pscp "${normal_scp_options[@]}" "${recovery_kernel}" "${remote[0]}:/mnt/boot/zImage.ota"
+pscp "${normal_scp_options[@]}" "${recovery_startup}" "${remote[0]}:/mnt/boot/startup.update"
 
-printf 'Entering authenticated RAM recovery through WM/HaRET...\n'
-plink "${plink_password_options[@]}" "${remote[0]}" \
+printf 'Entering passwordless RAM recovery through WM/HaRET...\n'
+plink "${normal_options[@]}" "${remote[0]}" \
     'cp /mnt/boot/startup.txt /mnt/boot/startup.normal.txt && mv /mnt/boot/startup.update /mnt/boot/startup.txt && sync && reboot' || true
+recovery_fingerprint=
 for _ in $(seq 1 120); do
     sleep 2
-    if plink "${plink_key_options[@]}" "${remote[0]}" 'test -e /etc/rx1950-recovery' 2>/dev/null; then break; fi
+    recovery_probe=$(plink -batch -ssh -pw '' "${remote[0]}" true 2>&1 || true)
+    recovery_fingerprint=$(printf '%s\n' "${recovery_probe}" | awk '/fingerprint is:/{getline; print $NF; exit}')
+    [[ "${recovery_fingerprint}" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || continue
+    recovery_options=(-batch -ssh -hostkey "${recovery_fingerprint}" -pw '')
+    if plink "${recovery_options[@]}" "${remote[0]}" 'test -e /etc/rx1950-recovery' 2>/dev/null; then break; fi
 done
-plink "${plink_key_options[@]}" "${remote[0]}" 'test -e /etc/rx1950-recovery' ||
+[[ -n "${recovery_fingerprint}" ]] || die 'RAM recovery did not expose an SSH host key'
+plink "${recovery_options[@]}" "${remote[0]}" 'test -e /etc/rx1950-recovery' ||
     die 'RAM recovery did not become reachable; its unattended fallback will reboot to the normal image'
 
 printf 'Streaming and verifying the whole-card image...\n'
@@ -175,9 +146,9 @@ printf 'Streaming and verifying the whole-card image...\n'
 # next client can time out before the server banner is emitted.
 sleep 10
 xz --decompress --stdout "${image}" |
-    plink "${plink_key_options[@]}" "${remote[0]}" "/usr/sbin/rx1950-recovery-write '${raw_size}' '${raw_sha}'" |
+    plink "${recovery_options[@]}" "${remote[0]}" "/usr/sbin/rx1950-recovery-write '${raw_size}' '${raw_sha}'" |
     tee "${temporary}/write.log"
 grep -qx RX1950_UPDATE_VERIFIED "${temporary}/write.log" || die 'device did not confirm media verification'
 
-plink "${plink_key_options[@]}" "${remote[0]}" 'sync; reboot -f' || true
+plink "${recovery_options[@]}" "${remote[0]}" 'sync; reboot -f' || true
 printf 'Update verified. WM will now start HaRET automatically.\n'

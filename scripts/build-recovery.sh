@@ -49,7 +49,9 @@ cat > "${root}/etc/group" <<'EOF'
 root:x:0:
 EOF
 cat > "${root}/etc/shadow" <<'EOF'
-root:!:0:0:99999:7:::
+# Recovery is deliberately reachable only through the physical USB cable.
+# Dropbear's -B option below permits this empty local root password.
+root::0:0:99999:7:::
 EOF
 : > "${root}/etc/rx1950-recovery"
 
