@@ -22,17 +22,21 @@ render_progress() {
 monitor_progress() {
     phase=$1 pid=$2 total=$3
     previous=-1
+    progress_done=0
     while kill -0 "$pid" 2>/dev/null; do
         done=$(awk '$1 == "rchar:" { print $2; exit }' "/proc/$pid/io" 2>/dev/null || echo 0)
         case "$done" in ''|*[!0-9]*) done=0;; esac
         [ "$done" -le "$total" ] || done=$total
+        progress_done=$done
         if [ "$done" -ne "$previous" ]; then
             render_progress "$phase" "$done" "$total"
             previous=$done
         fi
         sleep 1
     done
-    render_progress "$phase" "$total" "$total"
+    # Do not turn a failed or zero-byte dd into a misleading 100% report.
+    # The final SHA-256 comparison below remains the authoritative check.
+    render_progress "$phase" "$progress_done" "$total"
     printf '\n' >&2
 }
 

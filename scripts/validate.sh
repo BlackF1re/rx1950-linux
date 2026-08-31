@@ -170,6 +170,8 @@ case "${1:-source}" in
     grep -Fqx 'CONFIG_NC_SERVER=y' "${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
     grep -Fq 'nc -l -p 31337' "${ROOT_DIR}/scripts/recovery-init.sh"
     grep -Fq '/usr/sbin/rx1950-recovery-write' "${ROOT_DIR}/scripts/recovery-init.sh"
+    grep -Fq 'progress_done=0' "${ROOT_DIR}/scripts/recovery-write.sh"
+    ! grep -Fq 'render_progress "$phase" "$total" "$total"' "${ROOT_DIR}/scripts/recovery-write.sh"
     ! grep -Fq 'dropbear' "${ROOT_DIR}/scripts/recovery-init.sh"
     test -s "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
     ! grep -q '^set INITRD ' "${ROOT_DIR}/board/hp_rx1950/startup-recovery.txt"
