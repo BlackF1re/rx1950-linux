@@ -148,6 +148,12 @@ grep -Fq 'wpa_supplicant -B -D wext' "${tmp}/rx1950-wlan" ||
 extract /etc/X11/xorg.conf "${tmp}/xorg.conf"
 grep -Fq 'Option "TransformationMatrix" "-1.285855985 0.008767978 1.134934000 0.002143120 -1.318328347 1.152815066 0 0 1"' "${tmp}/xorg.conf" ||
     die 'measured touchscreen calibration is missing'
+grep -Fq 'Option "AutoAddDevices" "false"' "${tmp}/xorg.conf" ||
+    die 'Xorg must not rely on udev input hotplug'
+grep -Fq 'Option "Device" "/dev/input/event0"' "${tmp}/xorg.conf" ||
+    die 'Xorg touchscreen event device is missing'
+grep -Fq 'InputDevice "RX1950 touchscreen" "CorePointer"' "${tmp}/xorg.conf" ||
+    die 'Xorg touchscreen is not a core pointer'
 for module in fb shadow fbdevhw; do
     grep -Eq "^[[:space:]]*Load[[:space:]]+\"${module}\"" "${tmp}/xorg.conf" ||
         die "Xorg does not preload the ${module} module required by fbdev on musl"
