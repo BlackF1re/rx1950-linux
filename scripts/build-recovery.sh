@@ -14,13 +14,12 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
     die 'Buildroot BusyBox lacks the recovery netcat applet'
 [[ -x "${TARGET_DIR}/usr/bin/mkfifo" ]] ||
     die 'Buildroot BusyBox lacks the recovery mkfifo applet'
+command -v fakeroot >/dev/null || die 'host fakeroot is required for recovery device nodes'
 
 work="$(mktemp -d)"
 trap 'rm -rf -- "${work}"' EXIT
 root="${work}/root"
 mkdir -p "${root}"/{bin,sbin,usr/sbin,etc,dev,proc,sys,root,var/run,oldroot,lib}
-mknod -m 600 "${root}/dev/console" c 5 1
-mknod -m 666 "${root}/dev/null" c 1 3
 
 cp "${TARGET_DIR}/bin/busybox" "${root}/bin/busybox"
 cp "${ROOT_DIR}/scripts/recovery-init.sh" "${root}/init"
@@ -50,8 +49,12 @@ done
 mkdir -p "$(dirname "${OUTPUT}")"
 (
     cd "${root}"
-    find . -print0 | LC_ALL=C sort -z |
-        cpio --null --create --format=newc --owner=0:0 --reproducible 2>/dev/null |
+    fakeroot -- sh -c '
+        mknod -m 600 dev/console c 5 1
+        mknod -m 666 dev/null c 1 3
+        find . -print0 | LC_ALL=C sort -z |
+            cpio --null --create --format=newc --owner=0:0 --reproducible 2>/dev/null
+    ' |
         gzip -n -9 > "${OUTPUT}"
 )
 
