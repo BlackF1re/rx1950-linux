@@ -1,3 +1,0 @@
-#!/bin/sh
-exec /usr/bin/rx1950-launch --name wifi \
-    /usr/bin/mb-applet-xterm-wrapper.sh -e /usr/sbin/rx1950-wifi-ui

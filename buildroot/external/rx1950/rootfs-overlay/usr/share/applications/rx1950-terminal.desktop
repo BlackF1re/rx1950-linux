@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Terminal
+Exec=rx1950-launch --name terminal mb-applet-xterm-wrapper.sh
+Icon=utilities-terminal
+Terminal=false
+Type=Application
+Categories=System;TerminalEmulator;
+X-RX1950-Replaces=xterm.desktop;uxterm.desktop;

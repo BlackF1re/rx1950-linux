@@ -13,8 +13,8 @@ BR2_TARGET_GENERIC_GETTY=y
 BR2_TARGET_GENERIC_GETTY_PORT="tty1"
 # xf86-input-evdev has a hard build-time libudev dependency. Keep the minimal
 # eudev library, but omit its module loader, generated rules and hardware DB.
-# The post-build hook suppresses the daemon: kernel devtmpfs creates our fixed
-# device nodes and Xorg binds the RX1950 input paths explicitly.
+# The post-build hook suppresses the daemon: kernel devtmpfs creates device
+# nodes and the runtime Xorg generator discovers the actual input devices.
 BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y
 # BR2_PACKAGE_EUDEV_MODULE_LOADING is not set
 # BR2_PACKAGE_EUDEV_RULES_GEN is not set
@@ -48,7 +48,6 @@ BR2_PACKAGE_WPA_SUPPLICANT_CLI=y
 BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y
 BR2_PACKAGE_WPA_SUPPLICANT_WEXT=y
 BR2_PACKAGE_WPA_SUPPLICANT_CTRL_IFACE=y
-BR2_PACKAGE_WIRELESS_TOOLS=y
 BR2_PACKAGE_WIRELESS_REGDB=y
 BR2_PACKAGE_CA_CERTIFICATES=y
 BR2_PACKAGE_OPENSSL=y
@@ -71,6 +70,13 @@ BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y
 BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y
 BR2_PACKAGE_XAPP_XINPUT=y
 BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y
+# Xorg uses this tiny SHA1 library even though OpenSSL remains available to
+# HTTPS clients. This avoids mapping libcrypto into the resident X server.
+BR2_PACKAGE_LIBSHA1=y
+# matchbox-keyboard is nested under Buildroot's Matchbox menuconfig. The parent
+# only provides the embedded-environment library/config gate; no Matchbox WM,
+# desktop or panel is selected.
+BR2_PACKAGE_MATCHBOX=y
 BR2_PACKAGE_MATCHBOX_KEYBOARD=y
 BR2_PACKAGE_DEJAVU=y
 BR2_PACKAGE_DEJAVU_MONO=y
@@ -78,13 +84,17 @@ BR2_PACKAGE_DEJAVU_SANS=y
 # BR2_PACKAGE_DEJAVU_SERIF is not set
 # BR2_PACKAGE_DEJAVU_SANS_CONDENSED is not set
 # BR2_PACKAGE_DEJAVU_SERIF_CONDENSED is not set
+BR2_PACKAGE_HICOLOR_ICON_THEME=y
 BR2_PACKAGE_JWM=y
+BR2_PACKAGE_RX1950_SETTINGS=y
 BR2_PACKAGE_TRIGGERHAPPY=y
+# Essential PDA applications. All are non-resident until launched.
+BR2_PACKAGE_PCMANFM=y
+BR2_PACKAGE_LEAFPAD=y
+BR2_PACKAGE_DILLO=y
 BR2_PACKAGE_XAPP_XCALC=y
-BR2_PACKAGE_XAPP_XEDIT=y
 BR2_PACKAGE_XAPP_XSET=y
 BR2_PACKAGE_XTERM=y
-BR2_PACKAGE_DIALOG=y
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
 BR2_TARGET_ROOTFS_EXT2_LABEL="RX1950ROOT"

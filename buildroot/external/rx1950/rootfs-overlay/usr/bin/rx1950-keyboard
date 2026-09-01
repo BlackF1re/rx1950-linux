@@ -1,57 +1,77 @@
 #!/bin/sh
-# Toggle the on-screen keyboard and persist its selected layout.
-
-set -u
+# Toggle Matchbox Keyboard with a persistent, data-driven layout profile.
+set -eu
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
-export PATH
-export DISPLAY="${DISPLAY:-:0.0}"
+export PATH DISPLAY="${DISPLAY:-:0.0}"
 
 STATE=/etc/default/rx1950-keyboard
-LAYOUT=us
+DATA=/usr/share/matchbox-keyboard
+CONFIG=keyboard.xml
+LANG=en_US
+WIDTH=240
+HEIGHT=116
+FONTPTSIZE=9
 [ ! -r "$STATE" ] || . "$STATE"
 
-valid_layout() {
-    case "$1" in
-        us|ru|fr|fi|dvorak|extended|numpad) return 0 ;;
-        *) return 1 ;;
-    esac
+valid_config() {
+    case "$1" in ''|*/*|*..*) return 1 ;; esac
+    [ -r "$DATA/$1" ]
+}
+valid_lang() { case "$1" in ''|*[!A-Za-z0-9_.@-]*) return 1 ;; *) return 0 ;; esac; }
+valid_number() { case "$1" in ''|*[!0-9]*) return 1 ;; *) [ "$1" -gt 0 ] ;; esac; }
+
+save_state() {
+    umask 022
+    cat > "$STATE.tmp" <<EOF
+CONFIG=$CONFIG
+LANG=$LANG
+WIDTH=$WIDTH
+HEIGHT=$HEIGHT
+FONTPTSIZE=$FONTPTSIZE
+EOF
+    mv "$STATE.tmp" "$STATE"
 }
 
 start_keyboard() {
-    valid_layout "$LAYOUT" || LAYOUT=us
-    if ! pidof matchbox-keyboard >/dev/null 2>&1; then
-        matchbox-keyboard "$LAYOUT" >/tmp/matchbox-keyboard.log 2>&1 &
+    valid_config "$CONFIG" || CONFIG=keyboard.xml
+    valid_config "$CONFIG" || { echo 'no Matchbox keyboard layout is installed' >&2; return 1; }
+    valid_lang "$LANG" || LANG=en_US
+    valid_number "$WIDTH" || WIDTH=240
+    valid_number "$HEIGHT" || HEIGHT=116
+    valid_number "$FONTPTSIZE" || FONTPTSIZE=9
+    pidof matchbox-keyboard >/dev/null 2>&1 && return 0
+    command -v matchbox-keyboard >/dev/null 2>&1 || { echo 'matchbox-keyboard is not installed' >&2; return 1; }
+    MB_KBD_CONFIG="$DATA/$CONFIG" matchbox-keyboard --lang "$LANG" \
+        --width "$WIDTH" --height "$HEIGHT" --fontptsize "$FONTPTSIZE" \
+        >/tmp/matchbox-keyboard.log 2>&1 &
+}
+
+restart_if_running() {
+    if pidof matchbox-keyboard >/dev/null 2>&1; then
+        killall matchbox-keyboard 2>/dev/null || true
+        start_keyboard
     fi
 }
 
 case "${1:-toggle}" in
-    toggle)
-        if pidof matchbox-keyboard >/dev/null 2>&1; then
-            killall matchbox-keyboard
-        else
-            start_keyboard
-        fi
-        ;;
+    toggle) if pidof matchbox-keyboard >/dev/null 2>&1; then killall matchbox-keyboard; else start_keyboard; fi ;;
     show) start_keyboard ;;
     hide) killall matchbox-keyboard 2>/dev/null || true ;;
+    list)
+        for f in "$DATA"/keyboard*.xml; do [ -r "$f" ] && basename "$f"; done | sort -u
+        ;;
+    status)
+        valid_config "$CONFIG" || CONFIG=keyboard.xml
+        printf '%s\n' "$CONFIG"
+        ;;
+    language-get) printf '%s\n' "$LANG" ;;
     layout)
-        requested=${2:-}
-        valid_layout "$requested" || {
-            printf 'unsupported keyboard layout: %s\n' "$requested" >&2
-            exit 2
-        }
-        was_running=false
-        pidof matchbox-keyboard >/dev/null 2>&1 && was_running=true
-        printf 'LAYOUT=%s\n' "$requested" > "$STATE"
-        LAYOUT=$requested
-        if $was_running; then
-            killall matchbox-keyboard 2>/dev/null || true
-            start_keyboard
-        fi
+        requested=${2:-}; valid_config "$requested" || { echo "unsupported keyboard layout: $requested" >&2; exit 2; }
+        CONFIG=$requested; save_state; restart_if_running
         ;;
-    status) printf '%s\n' "$LAYOUT" ;;
-    *)
-        printf 'usage: rx1950-keyboard {toggle|show|hide|layout NAME|status}\n' >&2
-        exit 2
+    language)
+        requested=${2:-}; valid_lang "$requested" || { echo 'invalid keyboard locale' >&2; exit 2; }
+        LANG=$requested; save_state; restart_if_running
         ;;
+    *) echo 'usage: rx1950-keyboard {toggle|show|hide|list|status|layout FILE|language LOCALE|language-get}' >&2; exit 2 ;;
 esac

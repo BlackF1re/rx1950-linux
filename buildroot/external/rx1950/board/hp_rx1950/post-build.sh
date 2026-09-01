@@ -14,8 +14,9 @@ readonly ACX_RADIO0D_SHA256="6a4a7fbb24a328a88261bc2a507b2a0bf63c91e831e3f1a8caa
 readonly ACX_RADIO11_SHA256="e005a93a0b463e01edba2b79038b54c29a7932efee61c851a2ac644b8a4e5dd4"
 
 # xf86-input-evdev requires libudev at link time, but this fixed-hardware PDA
-# needs no userspace device policy. CONFIG_DEVTMPFS_MOUNT creates the nodes,
-# and xorg.conf names event0/event2 directly, so do not keep udevd resident.
+# does not need a resident userspace device manager. CONFIG_DEVTMPFS_MOUNT
+# creates device nodes and rx1950-xorg-config discovers current input devices
+# through sysfs at X startup.
 rm -f "${TARGET_DIR}/etc/init.d/S10udev"
 
 verify_sha256() {
@@ -92,15 +93,11 @@ printf '%s\n' "${SOURCE_DATE_EPOCH:-1767225600}" > "${TARGET_DIR}/usr/lib/rx1950
 date --utc --date="@${SOURCE_DATE_EPOCH:-1767225600}" '+%Y-%m-%d %H:%M:%S' \
     > "${TARGET_DIR}/usr/lib/rx1950/build-date-utc"
 
-# Buildroot's generic X init script starts before our hardware-specific
-# configuration and would race S48xserver for display :0.
+# Buildroot's generic X init script would race the hardware-aware S48xserver
+# for display :0.
 rm -f "${TARGET_DIR}/etc/init.d/S40xorg"
 
-# Buildroot normally derives /etc/os-release VERSION from the surrounding Git
-# checkout. A pull-request synthetic merge and the equivalent squash commit have
-# different commit IDs despite an identical source tree, which made otherwise
-# identical root filesystems differ. Keep source identity in external provenance
-# and make the runtime OS identity depend only on the requested release version.
+# Keep runtime OS identity reproducible across PR merge refs and squash commits.
 cat > "${TARGET_DIR}/etc/os-release" <<EOF
 NAME="rx1950-linux"
 ID=rx1950-linux
@@ -110,6 +107,8 @@ PRETTY_NAME="rx1950-linux ${RELEASE_VERSION}"
 HOME_URL="https://github.com/BlackF1re/rx1950-linux"
 EOF
 
+# Overlay source modes are executable in Git as well; enforce them here so a
+# copied/extracted source tree cannot silently produce non-executable helpers.
 chmod 0755 \
     "${TARGET_DIR}/etc/init.d/S02clock-sanity" \
     "${TARGET_DIR}/etc/init.d/S10kernel-modules" \
@@ -121,19 +120,18 @@ chmod 0755 \
     "${TARGET_DIR}/etc/init.d/S48xserver" \
     "${TARGET_DIR}/etc/init.d/S50jwm" \
     "${TARGET_DIR}/usr/bin/mb-applet-xterm-wrapper.sh" \
+    "${TARGET_DIR}/usr/bin/rx1950-jwm-app-menu" \
+    "${TARGET_DIR}/usr/bin/rx1950-jwm-panel-config" \
     "${TARGET_DIR}/usr/bin/rx1950-keyboard" \
     "${TARGET_DIR}/usr/bin/rx1950-launch" \
-    "${TARGET_DIR}/usr/bin/rx1950-wifi-launcher" \
     "${TARGET_DIR}/usr/share/udhcpc/rx1950-usb.script" \
     "${TARGET_DIR}/usr/sbin/rx1950-usb-dhcp" \
     "${TARGET_DIR}/usr/sbin/rx1950-time-sync" \
     "${TARGET_DIR}/usr/sbin/rx1950-timezone" \
     "${TARGET_DIR}/usr/sbin/rx1950-wlan" \
     "${TARGET_DIR}/usr/sbin/rx1950-control" \
-    "${TARGET_DIR}/usr/sbin/rx1950-button-settings" \
-    "${TARGET_DIR}/usr/sbin/rx1950-jwm-status-menu" \
-    "${TARGET_DIR}/usr/sbin/rx1950-power-menu" \
-    "${TARGET_DIR}/usr/sbin/rx1950-wifi-ui" \
+    "${TARGET_DIR}/usr/sbin/rx1950-xorg-config" \
     "${TARGET_DIR}/usr/sbin/rx1950-wlan-firmware" \
+    "${TARGET_DIR}/usr/sbin/rx1950-battery" \
     "${TARGET_DIR}/usr/sbin/rx1950-blue" \
     "${TARGET_DIR}/usr/sbin/rx1950-sensors"

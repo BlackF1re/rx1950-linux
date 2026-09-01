@@ -1,0 +1,30 @@
+#!/bin/sh
+# Generate the managed JWM system tray from small, user-editable settings.
+set -eu
+HOME=${HOME:-/root}
+STATE=/etc/default/rx1950-ui
+OUT=$HOME/.config/jwm/panel
+PANEL_HEIGHT=32
+PANEL_AUTOHIDE=off
+PANEL_TASK_WIDTH=70
+[ ! -r "$STATE" ] || . "$STATE"
+
+case "$PANEL_HEIGHT" in ''|*[!0-9]*) PANEL_HEIGHT=32 ;; esac
+[ "$PANEL_HEIGHT" -ge 24 ] 2>/dev/null && [ "$PANEL_HEIGHT" -le 64 ] 2>/dev/null || PANEL_HEIGHT=32
+case "$PANEL_TASK_WIDTH" in ''|*[!0-9]*) PANEL_TASK_WIDTH=70 ;; esac
+[ "$PANEL_TASK_WIDTH" -ge 30 ] 2>/dev/null && [ "$PANEL_TASK_WIDTH" -le 120 ] 2>/dev/null || PANEL_TASK_WIDTH=70
+case "$PANEL_AUTOHIDE" in off|bottom|on) ;; *) PANEL_AUTOHIDE=off ;; esac
+
+mkdir -p "$(dirname "$OUT")"
+cat > "$OUT.tmp" <<EOF
+<JWM>
+  <Tray x="0" y="-1" height="$PANEL_HEIGHT" autohide="$PANEL_AUTOHIDE" delay="500">
+    <TrayButton label="Start">root:1</TrayButton>
+    <TaskList maxwidth="$PANEL_TASK_WIDTH"/>
+    <TrayButton label="KB" popup="On-screen keyboard">exec:rx1950-keyboard toggle</TrayButton>
+    <TrayButton label="BAT" popup="Power and battery">exec:rx1950-launch --name settings rx1950-settings power</TrayButton>
+    <Clock format="%H:%M" width="47"><Button mask="123">exec:rx1950-launch --name settings rx1950-settings time</Button></Clock>
+  </Tray>
+</JWM>
+EOF
+mv "$OUT.tmp" "$OUT"

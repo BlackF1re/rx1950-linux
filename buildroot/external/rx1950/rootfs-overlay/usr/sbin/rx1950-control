@@ -1,121 +1,206 @@
 #!/bin/sh
-# Privileged backend for the on-demand graphical control center.
+# Scriptable privileged backend for the on-demand GTK control center.
 set -eu
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
-export PATH DISPLAY="${DISPLAY:-:0.0}"
+export PATH DISPLAY="${DISPLAY:-:0.0}" HOME="${HOME:-/root}"
 
 backlight() {
-    for d in /sys/class/backlight/*; do
-        [ -r "$d/max_brightness" ] && { printf '%s\n' "$d"; return; }
-    done
+    for d in /sys/class/backlight/*; do [ -r "$d/max_brightness" ] && { printf '%s\n' "$d"; return 0; }; done
     return 1
 }
-
 wifi_iface() {
-    for d in /sys/class/net/wlan*; do [ -e "$d" ] && { basename "$d"; return; }; done
+    for d in /sys/class/net/wlan*; do [ -e "$d" ] && { basename "$d"; return 0; }; done
     return 1
 }
-
+read_wlan_country() {
+    REGDOMAIN=
+    [ ! -r /etc/default/rx1950-wlan ] || . /etc/default/rx1950-wlan
+    printf '%s\n' "${REGDOMAIN:-}"
+}
+read_ui() {
+    DPI=96 PANEL_HEIGHT=32 PANEL_AUTOHIDE=off PANEL_TASK_WIDTH=70
+    [ ! -r /etc/default/rx1950-ui ] || . /etc/default/rx1950-ui
+}
+set_kv() {
+    file=$1 key=$2 value=$3
+    mkdir -p "$(dirname "$file")"
+    tmp="$file.tmp.$$"; trap 'rm -f "$tmp"' EXIT HUP INT TERM
+    { grep -Ev "^${key}=" "$file" 2>/dev/null || true; printf '%s=%s\n' "$key" "$value"; } > "$tmp"
+    mv "$tmp" "$file"; trap - EXIT HUP INT TERM
+}
+xml_theme_file() { printf '%s\n' "$HOME/.config/jwm/theme"; }
 escape_wpa() { printf '%s' "$1" | sed 's/[\\"]/\\&/g'; }
 
 write_network() {
     mode=$1 ssid=$2 password=${3:-}
-    case "$ssid$password" in *'\n'*|*'\r'*) exit 2;; esac
-    escaped_ssid=$(escape_wpa "$ssid")
+    [ -n "$ssid" ] || { echo 'SSID cannot be empty' >&2; return 2; }
+    case "$ssid$password" in *'\n'*|*'\r'*) return 2 ;; esac
+    country=$(read_wlan_country)
     umask 077
+    tmp=/etc/wpa_supplicant.conf.tmp.$$
+    trap 'rm -f "$tmp"' EXIT HUP INT TERM
     {
-        printf 'ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1\ncountry=RU\nap_scan=1\n\n'
-        printf 'network={\n    ssid="%s"\n    scan_ssid=1\n' "$escaped_ssid"
+        printf 'ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1\n'
+        [ -z "$country" ] || printf 'country=%s\n' "$country"
+        printf 'ap_scan=1\n\n'
         if [ "$mode" = psk ]; then
-            [ "${#password}" -ge 8 ] && [ "${#password}" -le 63 ] || exit 2
-            printf '    key_mgmt=WPA-PSK\n    psk="%s"\n' "$(escape_wpa "$password")"
+            [ "${#password}" -ge 8 ] && [ "${#password}" -le 63 ] || { echo 'WPA password must contain 8..63 characters' >&2; return 2; }
+            wpa_passphrase "$ssid" "$password" | sed '/^[[:space:]]*#psk=/d'
         else
-            printf '    key_mgmt=NONE\n'
+            printf 'network={\n    ssid="%s"\n    key_mgmt=NONE\n}\n' "$(escape_wpa "$ssid")"
         fi
-        printf '}\n'
-    } > /etc/wpa_supplicant.conf
+    } > "$tmp"
+    mv "$tmp" /etc/wpa_supplicant.conf
+    trap - EXIT HUP INT TERM
     rx1950-wlan connect >/dev/null
     dev=$(wifi_iface)
     address=$(ip -4 -o addr show dev "$dev" 2>/dev/null | awk 'NR==1 {print $4}')
     printf 'Connected to %s\n%s\n' "$ssid" "${address:-No IPv4 address}"
 }
 
+restart_ui_async() {
+    (
+        sleep 1
+        /etc/init.d/S50jwm stop || true
+        /etc/init.d/S48xserver stop || true
+        sleep 1
+        /etc/init.d/S48xserver start
+        sleep 2
+        /etc/init.d/S50jwm start
+    ) >/tmp/rx1950-ui-restart.log 2>&1 &
+}
+
+calibrate_touch() {
+    command -v xinput_calibrator >/dev/null 2>&1 || { echo 'xinput_calibrator is not installed' >&2; return 1; }
+    output=$(xinput_calibrator --output-type xorg.conf.d) || return 1
+    calibration=$(printf '%s\n' "$output" | sed -n 's/.*Option[[:space:]]*"Calibration"[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    swap=$(printf '%s\n' "$output" | sed -n 's/.*Option[[:space:]]*"SwapAxes"[[:space:]]*"\([01]\)".*/\1/p' | head -1)
+    set -- $calibration
+    [ "$#" -eq 4 ] || { echo 'calibrator did not return four evdev calibration values' >&2; return 1; }
+    case "$1$2$3$4" in *[!0-9-]*) echo 'invalid calibration values returned' >&2; return 1 ;; esac
+    [ -n "$swap" ] || swap=0
+    set_kv /etc/default/rx1950-input TOUCH_CALIBRATION "$1,$2,$3,$4"
+    set_kv /etc/default/rx1950-input TOUCH_SWAP_AXES "$swap"
+    printf 'Calibration saved. It is already active for this session and will be restored on the next X start.\n'
+}
+
 key_file=/etc/triggerhappy/triggers.d/rx1950.conf
+buttons_file=/etc/default/rx1950-buttons
+BUTTON_KEYS='KEY_POWER KEY_F1 KEY_F2 KEY_F3 KEY_F4 KEY_F5'
+[ ! -r "$buttons_file" ] || . "$buttons_file"
+valid_key() {
+    requested=$1
+    for key in $BUTTON_KEYS; do [ "$key" = "$requested" ] && return 0; done
+    return 1
+}
+
 case "${1:-}" in
     brightness-get)
         d=$(backlight); max=$(cat "$d/max_brightness"); now=$(cat "$d/actual_brightness")
-        printf '%s\n' $((now * 100 / max)) ;;
+        [ "$max" -gt 0 ] || exit 1; printf '%s\n' $((now * 100 / max)) ;;
     brightness-set)
-        case "${2:-}" in ''|*[!0-9]*) exit 2;; esac
+        case "${2:-}" in ''|*[!0-9]*) exit 2 ;; esac
         d=$(backlight); max=$(cat "$d/max_brightness"); value=$((max * $2 / 100))
         [ "$value" -gt 0 ] || value=1; [ "$value" -le "$max" ] || value=$max
         printf '%s\n' "$value" > "$d/brightness" ;;
+    dpi-get) read_ui; printf '%s\n' "$DPI" ;;
+    dpi-set)
+        case "${2:-}" in ''|*[!0-9]*) exit 2 ;; esac
+        [ "$2" -ge 60 ] && [ "$2" -le 200 ] || { echo 'DPI must be between 60 and 200' >&2; exit 2; }
+        set_kv /etc/default/rx1950-ui DPI "$2" ;;
+    ui-restart) restart_ui_async ;;
+
     volume-get)
         amixer get Master | sed -n 's/.*\[\([0-9][0-9]*\)%\].*/\1/p' | tail -1 ;;
     volume-set)
-        case "${2:-}" in ''|*[!0-9]*) exit 2;; esac
-        amixer -q sset Master "$2%" unmute ;;
+        case "${2:-}" in ''|*[!0-9]*) exit 2 ;; esac
+        [ "$2" -le 100 ] || exit 2; amixer -q sset Master "$2%" unmute ;;
+    audio-test) speaker-test -q -c 1 -t sine -f 1000 -l 1 >/dev/null 2>&1 ;;
+
+    theme-list)
+        for f in /usr/share/jwm/themes/*; do [ -f "$f" ] && basename "$f"; done | sort -u ;;
     theme-get)
-        sed -n 's|.*themes/\([^<]*\).*|\1|p' /etc/jwm/theme | head -1 ;;
+        f=$(xml_theme_file); [ -r "$f" ] || f=/etc/jwm/theme
+        sed -n 's|.*themes/\([^<]*\).*|\1|p' "$f" | head -1 ;;
     theme)
-        theme=${2:-}
-        case "$theme" in blue|dark|contrast) ;; *) exit 2;; esac
+        theme=${2:-}; case "$theme" in ''|*/*|*..*|*[!A-Za-z0-9_.-]*) exit 2 ;; esac
         [ -r "/usr/share/jwm/themes/$theme" ] || exit 2
-        tmp=/etc/jwm/theme.tmp.$$
-        trap 'rm -f "$tmp"' EXIT HUP INT TERM
+        mkdir -p "$HOME/.config/jwm"; f=$(xml_theme_file); tmp="$f.tmp.$$"; trap 'rm -f "$tmp"' EXIT HUP INT TERM
         printf '<JWM>\n  <Include>/usr/share/jwm/themes/%s</Include>\n</JWM>\n' "$theme" > "$tmp"
-        mv "$tmp" /etc/jwm/theme
-        trap - EXIT HUP INT TERM
-        jwm -reload ;;
-    audio-test)
-        speaker-test -q -c 1 -t sine -f 1000 -l 1 >/dev/null 2>&1 ;;
+        mv "$tmp" "$f"; trap - EXIT HUP INT TERM; jwm -reload ;;
+    jwm-reload) jwm -reload ;;
+    panel-height-get) read_ui; printf '%s\n' "$PANEL_HEIGHT" ;;
+    panel-height-set)
+        case "${2:-}" in ''|*[!0-9]*) exit 2 ;; esac
+        [ "$2" -ge 24 ] && [ "$2" -le 64 ] || { echo 'panel height must be 24..64 pixels' >&2; exit 2; }
+        set_kv /etc/default/rx1950-ui PANEL_HEIGHT "$2"; rx1950-jwm-panel-config; jwm -reload ;;
+    panel-autohide-get) read_ui; printf '%s\n' "$PANEL_AUTOHIDE" ;;
+    panel-autohide-set)
+        case "${2:-}" in off|bottom|on) ;; *) echo 'invalid panel autohide mode' >&2; exit 2 ;; esac
+        set_kv /etc/default/rx1950-ui PANEL_AUTOHIDE "$2"; rx1950-jwm-panel-config; jwm -reload ;;
+
+    keyboard-list) rx1950-keyboard list ;;
     keyboard-get) rx1950-keyboard status ;;
     keyboard) rx1950-keyboard layout "$2" ;;
+    keyboard-language-get) rx1950-keyboard language-get ;;
+    keyboard-language) rx1950-keyboard language "$2" ;;
     keyboard-toggle) rx1950-keyboard toggle ;;
+
+    wifi-country-get) read_wlan_country ;;
+    wifi-country-set)
+        country=$(printf '%s' "${2:-}" | tr 'a-z' 'A-Z')
+        case "$country" in ''|[A-Z][A-Z]) ;; *) echo 'country must be a two-letter ISO code or empty' >&2; exit 2 ;; esac
+        set_kv /etc/default/rx1950-wlan REGDOMAIN "$country"
+        if [ -n "$country" ] && wifi_iface >/dev/null 2>&1; then iw reg set "$country"; fi ;;
     wifi-scan)
-        rx1950-wlan start >/dev/null; dev=$(wifi_iface); ip link set "$dev" up
-        iw dev "$dev" scan | sed -n 's/^[[:space:]]*SSID: //p' | sed '/^$/d' | sort -u ;;
+        rx1950-wlan start >/dev/null
+        rx1950-wlan scan | sed -n 's/^[[:space:]]*SSID: //p' | sed '/^$/d' | sort -u ;;
     wifi-status)
         if dev=$(wifi_iface 2>/dev/null); then
             iw dev "$dev" link 2>/dev/null | sed -n '1,4p'
-            ip -4 -o addr show dev "$dev" | awk '{print $4}'
-        else printf 'Radio is off\n'; fi ;;
+            ip -4 -o addr show dev "$dev" 2>/dev/null | awk '{print $4}'
+        else echo 'Radio is off'; fi ;;
     wifi-open) write_network open "$2" ;;
     wifi-psk) write_network psk "$2" "$3" ;;
     wifi-disconnect) rx1950-wlan disconnect ;;
+
+    key-list) for key in $BUTTON_KEYS; do printf '%s\n' "$key"; done ;;
     key-get)
-        grep -E "^${2}[[:space:]]+1[[:space:]]" "$key_file" 2>/dev/null |
-            head -1 | sed -E 's/^[^[:space:]]+[[:space:]]+1[[:space:]]+//' ;;
+        valid_key "${2:-}" || exit 2
+        grep -E "^${2}[[:space:]]+1[[:space:]]" "$key_file" 2>/dev/null | head -1 | sed -E 's/^[^[:space:]]+[[:space:]]+1[[:space:]]+//' ;;
     key-set)
-        key=${2:-}; command=${3:-}
-        case "$key" in KEY_POWER|KEY_F1|KEY_F2|KEY_F3|KEY_F4|KEY_F5) ;; *) exit 2;; esac
-        case "$command" in *'\n'*|*'\r'*) exit 2;; esac
+        key=${2:-}; command=${3:-}; valid_key "$key" || exit 2
+        case "$command" in *'\n'*|*'\r'*) exit 2 ;; esac
         install -d -m 0755 "$(dirname "$key_file")"
-        tmp="${key_file}.tmp.$$"; trap 'rm -f "$tmp"' EXIT HUP INT TERM
+        tmp="$key_file.tmp.$$"; trap 'rm -f "$tmp"' EXIT HUP INT TERM
         { grep -Ev "^${key}[[:space:]]" "$key_file" 2>/dev/null || true; [ -z "$command" ] || printf '%s 1 %s\n' "$key" "$command"; } > "$tmp"
         mv "$tmp" "$key_file"; trap - EXIT HUP INT TERM ;;
     key-reload) /etc/init.d/S10triggerhappy restart >/dev/null 2>&1 || true ;;
-    power-info)
-        ac=unknown; [ ! -r /sys/class/power_supply/ac/online ] || ac=$(cat /sys/class/power_supply/ac/online)
-        b=/sys/class/power_supply/main-battery
-        printf 'External power: %s\n' "$( [ "$ac" = 1 ] && printf connected || printf disconnected )"
-        for f in status capacity voltage_now current_now charge_now; do
-            [ -r "$b/$f" ] && printf '%s: %s\n' "$f" "$(cat "$b/$f")"
-        done ;;
+
+    power-info) rx1950-battery info ;;
+    blank-get)
+        BLANK_SECONDS=60; [ ! -r /etc/default/rx1950-power ] || . /etc/default/rx1950-power
+        printf '%s\n' "${BLANK_SECONDS:-60}" ;;
     blank-set)
-        case "${2:-}" in ''|*[!0-9]*) exit 2;; esac
-        printf 'BLANK_SECONDS=%s\n' "$2" > /etc/default/rx1950-power
+        case "${2:-}" in ''|*[!0-9]*) exit 2 ;; esac
+        set_kv /etc/default/rx1950-power BLANK_SECONDS "$2"
         if [ "$2" -eq 0 ]; then xset s off; else xset s "$2" "$2"; fi ;;
     timezone-get) rx1950-timezone ;;
+    timezone-list)
+        find /usr/share/zoneinfo -type f 2>/dev/null | sed 's|^/usr/share/zoneinfo/||' | grep -Ev '^(posix/|right/|Etc/GMT[+-]|localtime$|posixrules$)' | sort ;;
     timezone) rx1950-timezone "$2" ;;
     time-sync) rx1950-time-sync ;;
     suspend) sync; printf mem > /sys/power/state ;;
     reboot) sync; exec /sbin/reboot ;;
     poweroff) sync; exec /sbin/poweroff ;;
-    calibrate) exec xinput_calibrator ;;
+    calibrate) calibrate_touch ;;
+    storage) df -h / /mnt/data 2>/dev/null || df -h / ;;
     status)
-        uname -a; printf '\nMemory:\n'; free -h; printf '\nStorage:\n'; df -h / /mnt/data 2>/dev/null
+        uname -a
+        printf '\nMemory:\n'; free -h
+        printf '\nStorage:\n'; df -h / /mnt/data 2>/dev/null || df -h /
         printf '\nNetwork:\n'; ip -br addr 2>/dev/null || ip addr
-        printf '\nBattery and sensors:\n'; rx1950-sensors 2>&1 || true ;;
-    *) printf 'unknown control operation\n' >&2; exit 2 ;;
+        printf '\nBattery:\n'; rx1950-battery info 2>&1 || true
+        printf '\nSensors:\n'; rx1950-sensors 2>&1 || true ;;
+    *) echo 'unknown control operation' >&2; exit 2 ;;
 esac

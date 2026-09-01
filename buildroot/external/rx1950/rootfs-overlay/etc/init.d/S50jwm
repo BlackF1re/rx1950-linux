@@ -1,21 +1,45 @@
 #!/bin/sh
-# Start the single JWM session after the framebuffer X server.
+# Start one user-editable JWM session after the framebuffer X server.
 
 export DISPLAY=:0.0 HOME=/root
 PIDFILE=/run/jwm.pid
 LOGFILE=/tmp/jwm.log
+JWMRC=$HOME/.jwmrc
+JWM_DIR=$HOME/.config/jwm
+
+running_pid() {
+    if [ -s "$PIDFILE" ]; then
+        pid=$(cat "$PIDFILE" 2>/dev/null || true)
+        [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && { printf '%s\n' "$pid"; return 0; }
+    fi
+    pid=$(pidof jwm 2>/dev/null | awk '{print $1}')
+    [ -n "$pid" ] || return 1
+    printf '%s\n' "$pid"
+}
+
+init_user_config() {
+    mkdir -p "$JWM_DIR" "$HOME/.local/share/applications"
+    [ -r "$JWMRC" ] || cp /etc/jwm/system.jwmrc "$JWMRC"
+    [ -r "$JWM_DIR/theme" ] || cp /etc/jwm/theme "$JWM_DIR/theme"
+    /usr/bin/rx1950-jwm-panel-config
+}
 
 case "${1:-start}" in
     start)
+        if pid=$(running_pid 2>/dev/null); then
+            printf '%s\n' "$pid" > "$PIDFILE"
+            exit 0
+        fi
         attempts=0
         while [ ! -S /tmp/.X11-unix/X0 ] && [ "$attempts" -lt 10 ]; do
             sleep 1
             attempts=$((attempts + 1))
         done
         [ -S /tmp/.X11-unix/X0 ] || exit 0
+        init_user_config
         rm -rf /run/rx1950-app.*
-        jwm -f /etc/jwm/system.jwmrc >"$LOGFILE" 2>&1 &
-        echo $! > "$PIDFILE"
+        jwm -f "$JWMRC" >"$LOGFILE" 2>&1 &
+        printf '%s\n' "$!" > "$PIDFILE"
         if [ -r /etc/default/rx1950-power ]; then
             . /etc/default/rx1950-power
             case "${BLANK_SECONDS:-60}" in
@@ -27,9 +51,7 @@ case "${1:-start}" in
         ;;
     stop)
         rx1950-keyboard hide 2>/dev/null || true
-        if [ -s "$PIDFILE" ]; then
-            kill "$(cat "$PIDFILE")" 2>/dev/null || true
-        fi
+        if pid=$(running_pid 2>/dev/null); then kill "$pid" 2>/dev/null || true; fi
         rm -f "$PIDFILE"
         ;;
 esac

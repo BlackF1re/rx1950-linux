@@ -1,0 +1,175 @@
+#!/bin/sh
+# Generate the Xorg configuration from current kernel devices.
+set -eu
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+STATE=/etc/default/rx1950-input
+FRAMEBUFFER=/dev/fb0
+SCREEN_MODE=240x320
+SCREEN_DEPTH=16
+TOUCH_DEVICE=
+KEYBOARD_DEVICE=
+TOUCH_NAME_PATTERN='touch|stylus|s3c.*ts|s3c2410'
+KEYBOARD_NAME_PATTERN='keys|keyboard|button|gpio'
+TOUCH_MATRIX='-1.285855985 0.008767978 1.134934000 0.002143120 -1.318328347 1.152815066 0 0 1'
+TOUCH_CALIBRATION=
+TOUCH_SWAP_AXES=0
+[ ! -r "$STATE" ] || . "$STATE"
+
+OUT=${1:-/run/rx1950/xorg.conf}
+mkdir -p "$(dirname "$OUT")"
+
+valid_event() {
+    case "$1" in /dev/input/event[0-9]*) [ -c "$1" ] ;; *) return 1 ;; esac
+}
+
+cap_nonzero() {
+    file=$1
+    [ -r "$file" ] || return 1
+    value=$(tr -d ' 0\n\t' < "$file")
+    [ -n "$value" ]
+}
+
+name_for() {
+    [ -n "${1:-}" ] || return 0
+    base=$(basename "$1")
+    cat "/sys/class/input/$base/device/name" 2>/dev/null || true
+}
+
+find_named() {
+    pattern=$1 role=$2
+    for sys in /sys/class/input/event*; do
+        [ -e "$sys" ] || continue
+        dev=/dev/input/$(basename "$sys")
+        valid_event "$dev" || continue
+        name=$(cat "$sys/device/name" 2>/dev/null || true)
+        printf '%s\n' "$name" | grep -Eiq "$pattern" || continue
+        case "$role" in
+            touch) cap_nonzero "$sys/device/capabilities/abs" || continue ;;
+            keys) cap_nonzero "$sys/device/capabilities/key" || continue ;;
+        esac
+        printf '%s\n' "$dev"
+        return 0
+    done
+    return 1
+}
+
+find_touch_fallback() {
+    for sys in /sys/class/input/event*; do
+        [ -e "$sys" ] || continue
+        cap_nonzero "$sys/device/capabilities/abs" || continue
+        dev=/dev/input/$(basename "$sys")
+        valid_event "$dev" || continue
+        printf '%s\n' "$dev"
+        return 0
+    done
+    return 1
+}
+
+find_keys_fallback() {
+    skip=$1
+    for sys in /sys/class/input/event*; do
+        [ -e "$sys" ] || continue
+        dev=/dev/input/$(basename "$sys")
+        [ "$dev" != "$skip" ] || continue
+        valid_event "$dev" || continue
+        cap_nonzero "$sys/device/capabilities/key" || continue
+        if cap_nonzero "$sys/device/capabilities/abs"; then continue; fi
+        printf '%s\n' "$dev"
+        return 0
+    done
+    return 1
+}
+
+if ! valid_event "$TOUCH_DEVICE" 2>/dev/null; then
+    TOUCH_DEVICE=$(find_named "$TOUCH_NAME_PATTERN" touch 2>/dev/null || find_touch_fallback 2>/dev/null || true)
+fi
+if ! valid_event "$KEYBOARD_DEVICE" 2>/dev/null; then
+    KEYBOARD_DEVICE=$(find_named "$KEYBOARD_NAME_PATTERN" keys 2>/dev/null || find_keys_fallback "$TOUCH_DEVICE" 2>/dev/null || true)
+fi
+
+case "$FRAMEBUFFER" in /dev/fb[0-9]*) [ -c "$FRAMEBUFFER" ] || { echo "framebuffer not found: $FRAMEBUFFER" >&2; exit 1; } ;; *) echo 'invalid framebuffer override' >&2; exit 2 ;; esac
+case "$SCREEN_DEPTH" in 8|15|16|24|32) ;; *) echo 'invalid SCREEN_DEPTH' >&2; exit 2 ;; esac
+case "$SCREEN_MODE" in *[!A-Za-z0-9_.xX+-]*) echo 'invalid SCREEN_MODE' >&2; exit 2 ;; esac
+case "$TOUCH_CALIBRATION" in ''|[0-9-]*,[0-9-]*,[0-9-]*,[0-9-]*) ;; *) TOUCH_CALIBRATION= ;; esac
+case "$TOUCH_SWAP_AXES" in 0|1) ;; *) TOUCH_SWAP_AXES=0 ;; esac
+
+{
+cat <<EOF
+Section "ServerLayout"
+    Identifier "rx1950"
+    Screen 0 "LCD"
+EOF
+[ -z "$TOUCH_DEVICE" ] || echo '    InputDevice "RX1950 touchscreen" "CorePointer"'
+[ -z "$KEYBOARD_DEVICE" ] || echo '    InputDevice "RX1950 buttons" "CoreKeyboard"'
+cat <<EOF
+EndSection
+
+Section "ServerFlags"
+    Option "AutoAddDevices" "false"
+EndSection
+
+Section "Module"
+    Load "fb"
+    Load "shadow"
+    Load "fbdevhw"
+EndSection
+
+Section "Device"
+    Identifier "S3C framebuffer"
+    Driver "fbdev"
+    Option "fbdev" "$FRAMEBUFFER"
+EndSection
+
+Section "Monitor"
+    Identifier "RX1950 LCD"
+EndSection
+
+Section "Screen"
+    Identifier "LCD"
+    Device "S3C framebuffer"
+    Monitor "RX1950 LCD"
+    DefaultDepth $SCREEN_DEPTH
+    SubSection "Display"
+        Depth $SCREEN_DEPTH
+        Modes "$SCREEN_MODE"
+    EndSubSection
+EndSection
+EOF
+if [ -n "$TOUCH_DEVICE" ]; then
+cat <<EOF
+
+Section "InputDevice"
+    Identifier "RX1950 touchscreen"
+    Driver "evdev"
+    Option "Device" "$TOUCH_DEVICE"
+    Option "SendCoreEvents" "true"
+EOF
+if [ -n "$TOUCH_CALIBRATION" ]; then
+    calibration=$(printf '%s' "$TOUCH_CALIBRATION" | tr ',' ' ')
+    printf '    Option "Calibration" "%s"\n' "$calibration"
+    printf '    Option "SwapAxes" "%s"\n' "$TOUCH_SWAP_AXES"
+else
+    printf '    Option "TransformationMatrix" "%s"\n' "$TOUCH_MATRIX"
+fi
+cat <<EOF
+EndSection
+EOF
+fi
+if [ -n "$KEYBOARD_DEVICE" ]; then
+cat <<EOF
+
+Section "InputDevice"
+    Identifier "RX1950 buttons"
+    Driver "evdev"
+    Option "Device" "$KEYBOARD_DEVICE"
+    Option "SendCoreEvents" "true"
+EndSection
+EOF
+fi
+} > "$OUT.tmp"
+mv "$OUT.tmp" "$OUT"
+printf 'X input: touch=%s (%s), keys=%s (%s)\n' \
+    "${TOUCH_DEVICE:-none}" "$(name_for "$TOUCH_DEVICE")" \
+    "${KEYBOARD_DEVICE:-none}" "$(name_for "$KEYBOARD_DEVICE")" >&2

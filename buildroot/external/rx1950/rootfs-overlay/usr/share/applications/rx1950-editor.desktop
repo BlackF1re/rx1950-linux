@@ -1,10 +1,9 @@
 [Desktop Entry]
-Encoding=UTF-8
-Name=Text editor
+Name=Text Editor
 Comment=Edit text files
-Exec=xedit
+Exec=rx1950-launch --name editor leafpad
 Icon=accessories-text-editor
 Terminal=false
 Type=Application
-Categories=Utility;
-SingleInstance=True
+Categories=Utility;TextEditor;
+X-RX1950-Replaces=leafpad.desktop;

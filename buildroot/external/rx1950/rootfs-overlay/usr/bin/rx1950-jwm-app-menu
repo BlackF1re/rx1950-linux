@@ -1,0 +1,92 @@
+#!/bin/sh
+# Build a JWM application menu from freedesktop .desktop files on demand.
+set -eu
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+HOME=${HOME:-/root}
+
+xml_escape() {
+    printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
+}
+
+field() {
+    key=$1 file=$2
+    awk -F= -v key="$key" '
+        /^\[Desktop Entry\][[:space:]]*$/ { in_entry=1; next }
+        /^\[/ { if (in_entry) exit; next }
+        in_entry && $1 == key {
+            sub(/^[^=]*=/, ""); sub(/\r$/, ""); print; exit
+        }
+    ' "$file"
+}
+
+truthy() {
+    case "$1" in true|TRUE|True|1|yes|YES|Yes) return 0 ;; *) return 1 ;; esac
+}
+
+strip_field_codes() {
+    # Preserve literal %% while dropping freedesktop launch placeholders. JWM
+    # is launching without selected files/URLs, so those placeholders have no
+    # value in this menu context.
+    printf '%s' "$1" | sed -e 's/%%/__RX1950_PERCENT__/g' \
+        -e 's/%[fFuUdDnNickvm]//g' -e 's/__RX1950_PERCENT__/%/g' \
+        -e 's/[[:space:]][[:space:]]*/ /g' -e 's/[[:space:]]*$//'
+}
+
+TMP=/run/rx1950-jwm-menu.$$
+REPLACED=/run/rx1950-jwm-replaced.$$
+SEEN=/run/rx1950-jwm-seen.$$
+trap 'rm -f "$TMP" "$REPLACED" "$SEEN"' EXIT HUP INT TERM
+: > "$TMP"; : > "$REPLACED"; : > "$SEEN"
+
+# User entries have priority over system entries. RX1950 wrapper entries can
+# declare the desktop IDs they supersede, avoiding duplicate launchers while
+# remaining entirely XDG-driven.
+DIRS="$HOME/.local/share/applications /usr/local/share/applications /usr/share/applications"
+for dir in $DIRS; do
+    [ -d "$dir" ] || continue
+    for file in "$dir"/*.desktop; do
+        [ -f "$file" ] || continue
+        repl=$(field X-RX1950-Replaces "$file" 2>/dev/null || true)
+        oldifs=$IFS; IFS=';'
+        for id in $repl; do [ -z "$id" ] || printf '%s\n' "$id" >> "$REPLACED"; done
+        IFS=$oldifs
+    done
+done
+
+for dir in $DIRS; do
+    [ -d "$dir" ] || continue
+    for file in "$dir"/*.desktop; do
+        [ -f "$file" ] || continue
+        id=${file##*/}
+        grep -Fqx "$id" "$SEEN" 2>/dev/null && continue
+        printf '%s\n' "$id" >> "$SEEN"
+        grep -Fqx "$id" "$REPLACED" 2>/dev/null && continue
+        [ "$(field Type "$file" 2>/dev/null || true)" = Application ] || continue
+        truthy "$(field Hidden "$file" 2>/dev/null || true)" && continue
+        truthy "$(field NoDisplay "$file" 2>/dev/null || true)" && continue
+        name=$(field Name "$file" 2>/dev/null || true)
+        exec_line=$(field Exec "$file" 2>/dev/null || true)
+        [ -n "$name" ] && [ -n "$exec_line" ] || continue
+        tryexec=$(field TryExec "$file" 2>/dev/null || true)
+        if [ -n "$tryexec" ]; then
+            case "$tryexec" in /*) [ -x "$tryexec" ] || continue ;; *) command -v "$tryexec" >/dev/null 2>&1 || continue ;; esac
+        fi
+        exec_line=$(strip_field_codes "$exec_line")
+        [ -n "$exec_line" ] || continue
+        if truthy "$(field Terminal "$file" 2>/dev/null || true)"; then
+            exec_line="mb-applet-xterm-wrapper.sh -e $exec_line"
+        fi
+        printf '%s\t%s\n' "$name" "$exec_line" >> "$TMP"
+    done
+done
+
+printf '<JWM>\n'
+if [ -s "$TMP" ]; then
+    sort -f "$TMP" | while IFS="$(printf '\t')" read -r name command; do
+        printf '  <Program label="%s">%s</Program>\n' "$(xml_escape "$name")" "$(xml_escape "$command")"
+    done
+else
+    printf '  <Program label="No applications installed">true</Program>\n'
+fi
+printf '</JWM>\n'

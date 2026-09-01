@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Web Browser
+Comment=Browse the web with Dillo
+Exec=rx1950-launch --name browser dillo
+Icon=web-browser
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;
+X-RX1950-Replaces=dillo.desktop;

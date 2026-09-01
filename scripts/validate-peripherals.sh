@@ -1,293 +1,198 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-or-later
+# Validate the rx1950 hardware/runtime contract without encoding device numbers
+# or UI choices that are intentionally configurable at runtime.
 set -euo pipefail
 
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly OUTPUT_DIR="${ROOT_DIR}/output"
-# shellcheck source=sources.lock.sh
-source "${ROOT_DIR}/scripts/sources.lock.sh"
+readonly RCFG="${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
+readonly KCFG="${ROOT_DIR}/kernel/rx1950_defconfig"
+readonly OVERLAY="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
-require_line() { grep -Fqx "$1" "$2" || die "$3"; }
-require_fragment() { grep -Fq "$1" "$2" || die "$3"; }
-rootfs_has() { debugfs -R "stat $2" "$1" 2>&1 | grep -q 'Inode:'; }
+require_line() { grep -Fqx -- "$1" "$2" || die "${3:-missing '$1' in $2}"; }
+require_fragment() { grep -Fq -- "$1" "$2" || die "${3:-missing '$1' in $2}"; }
+forbid_fragment() { ! grep -Fq -- "$1" "$2" || die "${3:-forbidden '$1' in $2}"; }
+require_file() { test -s "$1" || die "missing file: $1"; }
+require_exec() { test -x "$1" || die "not executable: $1"; }
+
+validate_kernel_config() {
+    local cfg="$1" req
+    for req in \
+        CONFIG_ARCH_MULTI_V4T=y CONFIG_CPU_S3C2442=y CONFIG_MACH_RX1950=y \
+        CONFIG_AEABI=y CONFIG_KUSER_HELPERS=y CONFIG_HZ_100=y \
+        CONFIG_DEVTMPFS=y CONFIG_DEVTMPFS_MOUNT=y CONFIG_INPUT_EVDEV=y \
+        CONFIG_KEYBOARD_GPIO=y CONFIG_TOUCHSCREEN_S3C2410=y \
+        CONFIG_FB_S3C2410=y CONFIG_FRAMEBUFFER_CONSOLE=y \
+        CONFIG_BACKLIGHT_CLASS_DEVICE=y CONFIG_BACKLIGHT_PWM=y CONFIG_PWM_SAMSUNG=y \
+        CONFIG_POWER_SUPPLY=y CONFIG_BATTERY_S3C_ADC=y \
+        CONFIG_I2C_CHARDEV=y CONFIG_I2C_S3C2410=y CONFIG_HWMON=y \
+        CONFIG_SENSORS_S3C=y CONFIG_SENSORS_S3C_RAW=y \
+        CONFIG_SND_SOC_SAMSUNG_RX1950_UDA1380=y \
+        CONFIG_MMC=y CONFIG_MMC_BLOCK=y CONFIG_MMC_S3C=y CONFIG_MMC_S3C_PIO=y \
+        CONFIG_DMADEVICES=y CONFIG_S3C24XX_DMAC=y \
+        CONFIG_SWAP=y CONFIG_ZRAM=y CONFIG_CRYPTO_LZO=y CONFIG_ZRAM_DEF_COMP_LZORLE=y \
+        CONFIG_CFG80211=y CONFIG_CFG80211_WEXT=y CONFIG_MAC80211=y \
+        CONFIG_USB_G_NCM=y CONFIG_LEDS_TRIGGER_NETDEV=y CONFIG_RTC_DRV_S3C=y; do
+        require_line "$req" "$cfg" "kernel contract dropped: $req"
+    done
+    for req in \
+        '# CONFIG_ARCH_MULTI_V7 is not set' '# CONFIG_OABI_COMPAT is not set' \
+        '# CONFIG_MMC_S3C_DMA is not set' '# CONFIG_MTD_BLOCK is not set' \
+        '# CONFIG_IP_PNP is not set' '# CONFIG_IPV6 is not set' \
+        '# CONFIG_EXT2_FS is not set' '# CONFIG_MSDOS_FS is not set' \
+        '# CONFIG_SERIAL_SAMSUNG_CONSOLE is not set' '# CONFIG_DEBUG_KERNEL is not set'; do
+        require_line "$req" "$cfg" "kernel optimization/safety contract dropped: $req"
+    done
+    require_line 'CONFIG_LOG_BUF_SHIFT=14' "$cfg" 'kernel log buffer is no longer bounded'
+    require_line 'CONFIG_CMDLINE_FROM_BOOTLOADER=y' "$cfg" 'normal boot must accept HaRET command line'
+    require_line '# CONFIG_CMDLINE_FORCE is not set' "$cfg" 'normal kernel must not force SD-root command line'
+    require_line 'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"' "$cfg" 'wireless regulatory database is not embedded'
+}
+
+validate_rootfs_config() {
+    local cfg="$1" req
+    for req in \
+        BR2_arm920t=y BR2_ARM_EABI=y BR2_SOFT_FLOAT=y BR2_ARM_INSTRUCTIONS_ARM=y \
+        BR2_TOOLCHAIN_BUILDROOT_MUSL=y BR2_REPRODUCIBLE=y BR2_CCACHE=y \
+        BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y \
+        BR2_PACKAGE_KMOD=y BR2_PACKAGE_IW=y BR2_PACKAGE_WPA_SUPPLICANT=y \
+        BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y BR2_PACKAGE_WIRELESS_REGDB=y \
+        BR2_PACKAGE_CA_CERTIFICATES=y BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y \
+        BR2_PACKAGE_ALSA_UTILS=y BR2_PACKAGE_XORG7=y \
+        BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y \
+        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y BR2_PACKAGE_XAPP_XINPUT=y \
+        BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y BR2_PACKAGE_LIBSHA1=y \
+        BR2_PACKAGE_JWM=y BR2_PACKAGE_MATCHBOX=y BR2_PACKAGE_MATCHBOX_KEYBOARD=y \
+        BR2_PACKAGE_RX1950_SETTINGS=y BR2_PACKAGE_TRIGGERHAPPY=y \
+        BR2_PACKAGE_PCMANFM=y BR2_PACKAGE_LEAFPAD=y BR2_PACKAGE_DILLO=y \
+        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XSET=y BR2_PACKAGE_XTERM=y \
+        BR2_TARGET_TZ_INFO=y; do
+        require_line "$req" "$cfg" "rootfs contract dropped: $req"
+    done
+    require_line '# BR2_PACKAGE_EUDEV_MODULE_LOADING is not set' "$cfg" 'unused eudev module loader enabled'
+    require_line '# BR2_PACKAGE_EUDEV_RULES_GEN is not set' "$cfg" 'unused eudev rule generation enabled'
+    require_line '# BR2_PACKAGE_EUDEV_ENABLE_HWDB is not set' "$cfg" 'unused eudev hwdb enabled'
+    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="128M"' "$cfg" 'rootfs seed size changed unexpectedly'
+    if grep -Fqx -- 'BR2_PACKAGE_DIALOG=y' "$cfg"; then die 'dialog terminal UI must not be in the base image'; fi
+    if grep -Fqx -- 'BR2_PACKAGE_WIRELESS_TOOLS=y' "$cfg"; then die 'legacy wireless-tools must not be in the base image'; fi
+    if grep -Fqx -- 'BR2_PACKAGE_XAPP_XEDIT=y' "$cfg"; then die 'xedit was replaced by Leafpad'; fi
+    if grep -Eq '^BR2_PACKAGE_MATCHBOX_(COMMON|DESKTOP|PANEL)=y$' "$cfg"; then die 'unused Matchbox desktop components enabled'; fi
+    return 0
+}
+
+validate_source_runtime() {
+    local jwm="${OVERLAY}/etc/jwm/system.jwmrc"
+    local xserver="${OVERLAY}/etc/init.d/S48xserver"
+    local xgen="${OVERLAY}/usr/sbin/rx1950-xorg-config"
+    local wlan="${OVERLAY}/usr/sbin/rx1950-wlan"
+    local control="${OVERLAY}/usr/sbin/rx1950-control"
+    local keyboard="${OVERLAY}/usr/bin/rx1950-keyboard"
+    local menu="${OVERLAY}/usr/bin/rx1950-jwm-app-menu"
+    local panel="${OVERLAY}/usr/bin/rx1950-jwm-panel-config"
+    local post="${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/post-build.sh"
+    local f obsolete
+
+    for f in "$xgen" "$wlan" "$control" "$keyboard" "$menu" "$panel" \
+        "$xserver" "${OVERLAY}/etc/init.d/S50jwm"; do
+        require_exec "$f"
+        sh -n "$f" || die "invalid shell syntax: $f"
+    done
+
+    test ! -e "${OVERLAY}/etc/X11/xorg.conf" || die 'static Xorg config must not pin input event numbers'
+    require_fragment '/sys/class/input/event*' "$xgen" 'X input devices are not discovered through sysfs'
+    require_fragment 'Option "AutoAddDevices" "false"' "$xgen" 'Xorg still depends on udev input hotplug'
+    require_fragment 'TOUCH_CALIBRATION' "$xgen" 'persistent touchscreen calibration is missing'
+    if grep -Eq '/dev/input/event[0-9]+' "$xgen"; then die 'Xorg generator contains a hard-coded event device'; fi
+    require_fragment 'rx1950-xorg-config "$CONFIG"' "$xserver" 'Xorg runtime config is not generated at startup'
+    require_fragment '-nolisten tcp' "$xserver" 'Xorg TCP listener is not disabled'
+    require_fragment '-dpi "$DPI"' "$xserver" 'global UI DPI is not applied by Xorg'
+    require_fragment 'rm -f "${TARGET_DIR}/etc/init.d/S10udev"' "$post" 'resident udev daemon is not suppressed'
+
+    require_fragment '<Dynamic label="Applications">exec:/usr/bin/rx1950-jwm-app-menu</Dynamic>' "$jwm" 'JWM applications menu is not XDG-driven'
+    require_fragment '<Include>/root/.config/jwm/panel</Include>' "$jwm" 'JWM panel is not data-driven'
+    require_fragment '<Include>/root/.config/jwm/theme</Include>' "$jwm" 'JWM theme is not user-owned'
+    require_fragment '/usr/share/applications' "$menu" 'application discovery ignores system desktop files'
+    require_fragment '.local/share/applications' "$menu" 'application discovery ignores user desktop files'
+    require_fragment 'X-RX1950-Replaces' "$menu" 'desktop wrapper deduplication is missing'
+    require_fragment '-sb -rightbar -sl 1000' "${OVERLAY}/usr/bin/mb-applet-xterm-wrapper.sh" 'terminal scrollbar/scrollback profile is missing'
+    require_fragment 'jwm -f "$JWMRC"' "${OVERLAY}/etc/init.d/S50jwm" 'JWM is not using user-owned ~/.jwmrc'
+
+    require_fragment 'keyboard*.xml' "$keyboard" 'keyboard layouts are still a closed hard-coded list'
+    require_fragment 'REGDOMAIN=' "${OVERLAY}/etc/default/rx1950-wlan" 'WLAN regulatory domain state missing'
+    forbid_fragment 'REGDOMAIN=RU' "${OVERLAY}/etc/default/rx1950-wlan" 'image hard-codes Russian regulatory domain'
+    require_fragment 'wpa_supplicant -B -D wext' "$wlan" 'ACX100-compatible WEXT association backend missing'
+    require_fragment 'udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q' "$wlan" 'WLAN DHCP must be bounded'
+    require_fragment 'POWER_MODE=' "${OVERLAY}/etc/init.d/S40wlan" 'WLAN boot path ignores runtime power-mode config'
+
+    require_fragment 'DPI=96' "${OVERLAY}/etc/default/rx1950-ui" 'UI scale state missing'
+    require_fragment 'PANEL_HEIGHT=32' "${OVERLAY}/etc/default/rx1950-ui" 'panel size state missing'
+    require_fragment 'dpi-set)' "$control" 'GUI backend cannot change global DPI'
+    require_fragment 'panel-height-set)' "$control" 'GUI backend cannot change panel geometry'
+    require_fragment 'calibrate_touch' "$control" 'touch calibration is not persisted'
+    require_fragment 'wifi-country-set)' "$control" 'Wi-Fi country is not configurable'
+    require_fragment 'key-set)' "$control" 'hardware button commands are not configurable'
+
+    for obsolete in \
+        usr/sbin/rx1950-wifi-ui usr/sbin/rx1950-jwm-status-menu \
+        usr/sbin/rx1950-power-menu usr/sbin/rx1950-button-settings \
+        usr/bin/rx1950-wifi-launcher; do
+        test ! -e "${OVERLAY}/${obsolete}" || die "obsolete terminal/hard-coded UI remains: ${obsolete}"
+    done
+
+    require_fragment 'echo 12M > /sys/block/zram0/disksize' "${OVERLAY}/etc/init.d/S20zram" 'zram is not bounded to 12 MiB'
+    require_fragment 'echo lzo-rle > /sys/block/zram0/comp_algorithm' "${OVERLAY}/etc/init.d/S20zram" 'zram is not using lzo-rle'
+    require_fragment 'read_prop "$d" capacity' "${OVERLAY}/usr/sbin/rx1950-battery" 'battery helper does not consume real power-supply capacity'
+    require_fragment 'charge_now' "${OVERLAY}/usr/sbin/rx1950-battery" 'battery helper lacks real charge fallback'
+
+    for f in rx1950-files.desktop rx1950-editor.desktop rx1950-browser.desktop \
+        rx1950-terminal.desktop rx1950-settings.desktop; do
+        require_file "${OVERLAY}/usr/share/applications/$f"
+    done
+}
 
 case "${1:-source}" in
-source)
-    kcfg="${ROOT_DIR}/kernel/rx1950_defconfig"
-    rcfg="${ROOT_DIR}/buildroot/external/rx1950/configs/rx1950_defconfig"
-    busybox_fragment="${ROOT_DIR}/buildroot/external/rx1950/configs/busybox.fragment"
-    grow="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S05grow-root"
-    mods="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S10kernel-modules"
-    zram="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S20zram"
-    usb="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S35usb-gadget"
-    time_sync="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S38time-sync"
-    wlan_init="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S40wlan"
-    xserver="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S48xserver"
-    dhcp="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/share/udhcpc/rx1950-usb.script"
-    sensors="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-sensors"
-    wlan="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-wlan"
-    fw="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-wlan-firmware"
-    blue="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-blue"
-    glue="${ROOT_DIR}/kernel/modules/rx1950-acx/rx1950_acx.c"
-    acx_patch="${ROOT_DIR}/kernel/acx-patches/0001-mem-ack-irqs-before-deferred-work.patch"
-    acx_scan_patch="${ROOT_DIR}/kernel/acx-patches/0002-scan-cancel-before-interface-stop.patch"
-    build="${ROOT_DIR}/scripts/build.sh"
-    sources_lock="${ROOT_DIR}/scripts/sources.lock.sh"
-    opkg="${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/opkg/opkg.conf"
-    hwmon="${ROOT_DIR}/kernel/patches/0010-rx1950-enable-hwmon.patch"
-    audio_dma="${ROOT_DIR}/kernel/patches/0011-rx1950-register-audio-dma.patch"
-    blue_patch="${ROOT_DIR}/kernel/patches/0011-rx1950-decouple-blue-led.patch"
-    unsafe_mmc="${ROOT_DIR}/kernel/patches/0011-s3cmci-fix-gpiod-return-handling.patch"
-    nand_protect="${ROOT_DIR}/kernel/patches/0012-rx1950-protect-internal-nand.patch"
-    keyboard_xrender="${ROOT_DIR}/buildroot/external/rx1950/patches/matchbox-keyboard/0001-link-Xrender-in-cairo-mode.patch"
-
-    for req in \
-        CONFIG_S3C_ADC=y CONFIG_TOUCHSCREEN_S3C2410=y CONFIG_BATTERY_S3C_ADC=y \
-        CONFIG_RTC_DRV_S3C=y CONFIG_SND_SOC_SAMSUNG_RX1950_UDA1380=y \
-        CONFIG_MMC_S3C_PIO=y CONFIG_I2C_CHARDEV=y CONFIG_HWMON=y \
-        CONFIG_SENSORS_S3C=y CONFIG_SENSORS_S3C_RAW=y CONFIG_MODULES=y \
-        CONFIG_FW_LOADER=y CONFIG_CFG80211=y CONFIG_MAC80211=y \
-        CONFIG_SWAP=y CONFIG_ZRAM=y CONFIG_CRYPTO_LZO=y \
-        CONFIG_ZRAM_DEF_COMP_LZORLE=y \
-        CONFIG_LEDS_TRIGGERS=y CONFIG_LEDS_TRIGGER_NETDEV=y; do
-        require_line "$req" "$kcfg" "RX1950 kernel requirement missing: $req"
-    done
-    require_line '# CONFIG_MMC_S3C_DMA is not set' "$kcfg" 'RX1950 SD DMA must remain disabled'
-    require_line '# CONFIG_MTD_BLOCK is not set' "$kcfg" 'internal NAND block access must remain disabled'
-    require_line '# CONFIG_IP_PNP is not set' "$kcfg" 'unused kernel IP autoconfiguration is enabled'
-    require_line '# CONFIG_IPV6 is not set' "$kcfg" 'unused IPv6 stack is enabled'
-    require_line '# CONFIG_EXT2_FS is not set' "$kcfg" 'unused ext2 driver is enabled'
-    require_line '# CONFIG_MSDOS_FS is not set' "$kcfg" 'unused legacy FAT driver is enabled'
-    require_line 'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"' "$kcfg" 'regulatory database is not embedded in the kernel'
-    require_line 'CONFIG_EXTRA_FIRMWARE_DIR="firmware"' "$kcfg" 'kernel firmware source directory changed'
-
-    require_fragment 'depends on !ARCH_MULTIPLATFORM || ARCH_S3C24XX' "${ROOT_DIR}/kernel/patches/0006-s3c24xx-restore-adc-multiplatform.patch" 'S3C24xx ADC compatibility patch missing'
-    require_fragment 'nr_irqs - S3C2410_IRQSUB(0)' "${ROOT_DIR}/kernel/patches/0007-s3c24xx-fix-static-irq-domain-size.patch" 'S3C24xx IRQ-domain fix missing'
-    require_fragment 's3c_rtc_driver_ids' "${ROOT_DIR}/kernel/patches/0008-s3c-rtc-restore-platform-data-matching.patch" 'legacy RTC matching patch missing'
-    require_fragment '{"Right ADC", NULL, "Right PGA"}' "${ROOT_DIR}/kernel/patches/0009-uda1380-fix-right-adc-dapm-route.patch" 'UDA1380 DAPM fix missing'
-    require_fragment 'select S3C_DEV_HWMON' "$hwmon" 'RX1950 hwmon selection missing'
-    require_fragment 's3c_hwmon_set_platdata(&rx1950_hwmon_pdata);' "$hwmon" 'RX1950 hwmon platform data missing'
-    require_fragment '.mult = 4235' "$hwmon" 'RX1950 voltage scaling missing'
-    require_fragment 'WARN_ON(platform_device_register(&s3c_device_hwmon));' "$hwmon" 'hwmon is not isolated from boot-critical devices'
-    require_fragment 'WARN_ON(platform_device_register(&s3c2410_device_dma));' "$audio_dma" 'audio DMA provider is not registered'
-    if grep -Fq '&s3c2410_device_dma,' "$hwmon"; then die 'experimental DMA device must not enter the RX1950 boot path'; fi
-    if grep -Fq '&s3c_device_hwmon,' "$hwmon"; then die 'optional hwmon must not enter the RX1950 boot-critical device array'; fi
-    [[ ! -e "$unsafe_mmc" ]] || die 'unsafe S3CMCI GPIO patch must remain reverted'
-    [[ "$(grep -Fc '.mask_flags = MTD_WRITEABLE,' "$nand_protect")" -eq 2 ]] ||
-        die 'all writable RX1950 NAND data partitions must be forced read-only'
-
-    [[ ! -e "$blue_patch" ]] || die 'obsolete Blue LED decoupling patch must remain removed'
-    require_fragment '#define RX1950_WLAN_BASE          0x20000000' "$glue" 'ACX MMIO resource missing'
-    require_fragment '#define RX1950_WLAN_RESET         S3C2410_GPA(14)' "$glue" 'WLAN reset wiring missing'
-    require_fragment '#define RX1950_WLAN_NGCS4         S3C2410_GPA(15)' "$glue" 'WLAN chip-select wiring missing'
-    require_fragment '#define RX1950_WLAN_CLKOUT1       S3C2410_GPH(10)' "$glue" 'WLAN clock wiring missing'
-    require_fragment '#define RX1950_WLAN_IRQ_GPIO      S3C2410_GPG(8)' "$glue" 'WLAN IRQ wiring missing'
-    require_fragment '#define RX1950_WLAN_AUX1          S3C2410_GPC(8)' "$glue" 'historical RX1950 WLAN GPC8 line missing'
-    require_fragment '#define RX1950_WLAN_AUX2          S3C2410_GPC(9)' "$glue" 'historical RX1950 WLAN GPC9 line missing'
-    require_fragment 'static bool gpa11_power = true;' "$glue" 'historical GPA11 WLAN power must be the default'
-    require_fragment 'led_trigger_register_simple("rx1950-acx-mem"' "$glue" 'GPA11 is not owned through the mainline Blue LED trigger'
-    require_fragment 'led_trigger_event(rx1950_wlan_power_trigger, LED_FULL);' "$glue" 'GPA11 WLAN power is not asserted through the LED subsystem'
-    require_fragment 'gpio_direction_output(RX1950_WLAN_AUX1, 1)' "$glue" 'historical GPC8 WLAN state is not asserted'
-    require_fragment 'gpio_direction_output(RX1950_WLAN_AUX2, 1)' "$glue" 'historical GPC9 WLAN state is not asserted'
-
-    require_fragment 'adev->irq_reason |= deferred;' "$acx_patch" 'ACX deferred MEM IRQ causes are not latched in hard IRQ'
-    require_fragment 'irqmasked & ~HOST_INT_CMD_COMPLETE' "$acx_patch" 'ACX command completion can be consumed before its poller'
-    require_fragment '.cancel_hw_scan' "$acx_scan_patch" 'ACX scan cancellation callback is missing'
-    require_fragment 'test_and_clear_bit(ACX_FLAG_SCANNING' "$acx_scan_patch" 'ACX scan completion is not serialized'
-    require_fragment "readonly ACX_COMMIT=\"${ACX_COMMIT}\"" "$sources_lock" 'ACX source commit is not pinned'
-    require_fragment 'source "${ROOT_DIR}/scripts/sources.lock.sh"' "$build" 'build does not consume the pinned source lock'
-    require_fragment "'=http,https'" "$build" 'legacy ACX firmware redirect cannot reach HTTPS'
-    require_fragment 'kernel/acx-patches/*.patch' "$build" 'local ACX patch set is not applied'
-    require_fragment 'CONFIG_ACX_MAC80211_MEM=m' "$build" 'ACX memory transport not built'
-    require_fragment 'CONFIG_ACX_MAC80211_PCI=n' "$build" 'unneeded ACX PCI transport enabled'
-    require_fragment 'CONFIG_ACX_MAC80211_USB=n' "$build" 'unneeded ACX USB transport enabled'
-    require_fragment 'kernel-modules.tar' "$build" 'WLAN module bundle not assembled'
-
-    for req in \
-        BR2_PACKAGE_KMOD=y BR2_PACKAGE_KMOD_TOOLS=y BR2_PACKAGE_IW=y \
-        BR2_PACKAGE_WPA_SUPPLICANT=y \
-        BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y BR2_PACKAGE_CA_CERTIFICATES=y \
-        BR2_PACKAGE_WIRELESS_REGDB=y \
-        BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y BR2_PACKAGE_LIBCURL_CURL=y \
-        BR2_PACKAGE_LIBCURL_OPENSSL=y BR2_PACKAGE_HTOP=y BR2_PACKAGE_EVTEST=y \
-        BR2_PACKAGE_I2C_TOOLS=y BR2_PACKAGE_LM_SENSORS=y \
-        BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y \
-        BR2_TARGET_TZ_INFO=y BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y \
-        BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y \
-        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y \
-        BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
-        BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
-        BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
-        BR2_PACKAGE_JWM=y BR2_PACKAGE_TRIGGERHAPPY=y \
-        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XEDIT=y BR2_PACKAGE_XAPP_XSET=y \
-        BR2_PACKAGE_DIALOG=y BR2_PACKAGE_XTERM=y; do
-        require_line "$req" "$rcfg" "RX1950 rootfs requirement missing: $req"
-    done
-    require_line 'BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y' "$rcfg" 'libudev required by the evdev input driver is disabled'
-    require_line '# BR2_PACKAGE_EUDEV_MODULE_LOADING is not set' "$rcfg" 'unused eudev module loader is enabled'
-    require_line '# BR2_PACKAGE_EUDEV_ENABLE_HWDB is not set' "$rcfg" 'unused eudev hardware database is enabled'
-    require_fragment 'rm -f "${TARGET_DIR}/etc/init.d/S10udev"' "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/post-build.sh" 'resident udev daemon was not suppressed'
-    require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$rcfg" 'RX1950 rootfs does not configure a blank root password'
-    require_line 'CONFIG_NTPD=y' "$busybox_fragment" 'BusyBox NTP client is disabled'
-    require_line 'CONFIG_TIMEOUT=y' "$busybox_fragment" 'BusyBox timeout is required for bounded radio health checks'
-    require_line '# CONFIG_CROND is not set' "$busybox_fragment" 'idle BusyBox crond must remain disabled'
-    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="128M"' "$rcfg" 'rootfs seed size is not 128 MiB'
-    if grep -Fq 'BR2_PACKAGE_CURL=y' "$rcfg"; then die 'legacy Buildroot BR2_PACKAGE_CURL must not be used'; fi
-
-    require_fragment '/proc/self/mountinfo' "$grow" 'root grower still relies on /dev/root alias'
-    require_fragment '/sys/class/block/mmcblk0p2/dev' "$grow" 'root grower does not verify root device identity'
-    require_fragment 'kernel-modules.tar' "$mods" 'module installer does not consume FAT module bundle'
-    require_fragment 'echo 12M > /sys/block/zram0/disksize' "$zram" 'zram swap size is not bounded to 12 MiB'
-    require_fragment 'echo lzo-rle > /sys/block/zram0/comp_algorithm' "$zram" 'zram does not use the ARM9-friendly lzo-rle compressor'
-    require_fragment 'ptmxmode=0666' "${ROOT_DIR}/buildroot/external/rx1950/board/hp_rx1950/fstab" 'devpts does not permit PTY allocation'
-    require_fragment "sset 'Master Playback Switch' on" "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S30alsa" 'UDA1380 master output is not unmuted at boot'
-    require_fragment 'rx1950-usb-dhcp' "$usb" 'bounded USB DHCP client is not started'
-    require_fragment '192.168.7.2/24' "$usb" 'fixed USB recovery address lost'
-    require_fragment 'ip route replace default' "$dhcp" 'USB default route handling missing'
-    require_fragment 'rx1950-time-sync' "$time_sync" 'boot-time NTP synchronization is not started'
-    require_fragment '/sys/devices/platform/s3c24xx-adc/s3c-hwmon/adc*_raw' "$sensors" 'sensor helper does not use verified Linux 6.2 ADC path'
-    require_fragment 'modprobe acx-mac80211' "$wlan" 'WLAN helper does not load ACX driver first'
-    require_fragment 'modprobe acx-mac80211 watchdog=1' "$wlan" 'ACX scan watchdog is not enabled'
-    if grep -Fq 'timeout 20 iw dev' "$wlan"; then die 'boot-time WLAN scan must not trigger ACX recovery'; fi
-    require_fragment 'iw reg set "$REGDOMAIN"' "$wlan" 'WLAN regulatory domain is not applied before scanning'
-    require_fragment 'modprobe rx1950_acx' "$wlan" 'WLAN helper does not load RX1950 glue'
-    require_fragment 'no-gpa11-power' "$wlan" 'WLAN helper lacks the explicit no-GPA11 diagnostic mode'
-    require_fragment 'OPENBSD_URL=' "$fw" 'ACX firmware fetch helper missing'
-    require_fragment 'WLANGEN.BIN' "$fw" 'ACX main firmware mapping missing'
-    require_fragment "tr 'A-F' 'a-f'" "$fw" 'ACX radio firmware hex suffix is not normalized to driver case'
-    require_fragment 'shared_power_active' "$blue" 'Blue helper does not protect the shared GPA11 WLAN power line'
-    require_fragment 'echo netdev > "$LED/trigger"' "$blue" 'Blue LED cannot use explicit WLAN trigger in diagnostic independent mode'
-    require_fragment 'echo none > "$LED/trigger"' "$blue" 'Blue LED cannot return to manual mode in diagnostic independent mode'
-    require_fragment 'rx1950-wlan start historical' "$wlan_init" 'boot WLAN path does not follow the historical RX1950 wiring'
-    require_fragment 'Xorg :0 -config /etc/X11/xorg.conf' "$xserver" 'Xorg framebuffer server is not started'
-    require_fragment 'jwm -f /etc/jwm/system.jwmrc' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50jwm" 'JWM session is not started'
-    require_fragment '<Menu label="Settings">' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/jwm/system.jwmrc" 'JWM settings menu is missing'
-    require_fragment 'rx1950-jwm-status-menu' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/jwm/system.jwmrc" 'dynamic system status menu is missing'
-    require_fragment 'rx1950-button-settings' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/jwm/system.jwmrc" 'hardware button settings are missing'
-    require_fragment 'rx1950-wifi-ui' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" 'Wi-Fi launcher does not open the on-demand manager'
-    require_fragment 'key-reload)' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-control" 'button assignments are not reloaded atomically'
-    require_fragment 'user root' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/default/triggerhappy" 'hardware button actions cannot control the root-owned PDA session'
-    require_fragment '$(PNG_LIBS) -lXrender' "$keyboard_xrender" 'Matchbox keyboard Cairo backend is not linked with Xrender'
-    if grep -Fq 'BR2_PACKAGE_LEAFPAD=y' "$rcfg"; then die 'unverifiable legacy Leafpad source must not be enabled'; fi
-    if grep -Eq '^[[:space:]]*matchbox-keyboard[[:space:]]*&' "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50jwm"; then
-        die 'on-screen keyboard must not occupy the desktop at boot'
-    fi
-    require_fragment 'udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q' "$wlan" 'WLAN DHCP is not bounded'
-    require_fragment 'wpa_supplicant -B -D wext' "$wlan" 'WLAN must use the ACX100-compatible WEXT backend'
-    for gui_script in \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/etc/init.d/S50jwm" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/mb-applet-xterm-wrapper.sh" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-keyboard" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-launch" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/bin/rx1950-wifi-launcher" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-control" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-button-settings" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-jwm-status-menu" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-power-menu" \
-        "${ROOT_DIR}/buildroot/external/rx1950/rootfs-overlay/usr/sbin/rx1950-wifi-ui"; do
-        test -s "$gui_script" || die "GUI script is missing: $gui_script"
-        sh -n "$gui_script" || die "GUI script has invalid shell syntax: $gui_script"
-    done
-    require_line 'dest root /' "$opkg" 'opkg root destination missing'
-    require_line 'option lists_dir /var/lib/opkg/lists' "$opkg" 'opkg list directory missing'
-    if grep -Eq '^[[:space:]]*src(/gz)?[[:space:]]' "$opkg"; then die 'engineering opkg config must not use an unverified binary feed'; fi
-    ;;
-
-kernel)
-    cfg="${2:-${OUTPUT_DIR}/kernel.config}"
-    for req in \
-        CONFIG_S3C_ADC=y CONFIG_TOUCHSCREEN_S3C2410=y CONFIG_BATTERY_S3C_ADC=y \
-        CONFIG_RTC_DRV_S3C=y CONFIG_SND_SOC_SAMSUNG_RX1950_UDA1380=y \
-        CONFIG_DMADEVICES=y CONFIG_S3C24XX_DMAC=y CONFIG_MMC_S3C_PIO=y \
-        CONFIG_SWAP=y CONFIG_ZRAM=y CONFIG_CRYPTO_LZO=y \
-        CONFIG_ZRAM_DEF_COMP_LZORLE=y \
-        CONFIG_I2C_CHARDEV=y CONFIG_HWMON=y CONFIG_S3C_DEV_HWMON=y \
-        CONFIG_SENSORS_S3C=y CONFIG_SENSORS_S3C_RAW=y CONFIG_USB_G_NCM=y \
-        CONFIG_MODULES=y CONFIG_FW_LOADER=y CONFIG_CFG80211=y CONFIG_MAC80211=y \
-        CONFIG_LEDS_TRIGGERS=y CONFIG_LEDS_TRIGGER_NETDEV=y; do
-        require_line "$req" "$cfg" "generated kernel dropped: $req"
-    done
-    require_line '# CONFIG_MMC_S3C_DMA is not set' "$cfg" 'generated kernel unexpectedly enabled S3C MCI DMA'
-    require_line '# CONFIG_MTD_BLOCK is not set' "$cfg" 'generated kernel exposes internal NAND as a block device'
-    require_line '# CONFIG_IP_PNP is not set' "$cfg" 'generated kernel unexpectedly enabled IP autoconfiguration'
-    require_line '# CONFIG_IPV6 is not set' "$cfg" 'generated kernel unexpectedly enabled IPv6'
-    require_line '# CONFIG_EXT2_FS is not set' "$cfg" 'generated kernel unexpectedly enabled ext2'
-    require_line '# CONFIG_MSDOS_FS is not set' "$cfg" 'generated kernel unexpectedly enabled legacy FAT'
-    require_line 'CONFIG_CMDLINE_FROM_BOOTLOADER=y' "$cfg" 'generated kernel ignores the HaRET normal/recovery command line'
-    require_line '# CONFIG_CMDLINE_FORCE is not set' "$cfg" 'generated kernel forces the SD-root command line and breaks RAM recovery'
-    require_line 'CONFIG_BINFMT_SCRIPT=y' "$cfg" 'generated kernel cannot execute the recovery /init script'
-    require_line 'CONFIG_EXTRA_FIRMWARE="regulatory.db regulatory.db.p7s"' "$cfg" 'generated kernel does not embed regulatory.db'
-    require_line 'CONFIG_EXTRA_FIRMWARE_DIR="firmware"' "$cfg" 'generated kernel firmware directory changed'
-    test -s "${OUTPUT_DIR}/kernel-modules.tar" || die 'kernel WLAN module bundle missing'
-    tar -tf "${OUTPUT_DIR}/kernel-modules.tar" | grep -q '/acx-mac80211\.ko$' || die 'ACX100 module missing from bundle'
-    tar -tf "${OUTPUT_DIR}/kernel-modules.tar" | grep -q '/rx1950_acx\.ko$' || die 'RX1950 WLAN glue missing from bundle'
-    ;;
-
-rootfs)
-    cfg="${2:-${OUTPUT_DIR}/buildroot.config}"
-    for req in \
-        BR2_PACKAGE_KMOD=y BR2_PACKAGE_KMOD_TOOLS=y BR2_PACKAGE_IW=y \
-        BR2_PACKAGE_WPA_SUPPLICANT=y \
-        BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y BR2_PACKAGE_CA_CERTIFICATES=y \
-        BR2_PACKAGE_WIRELESS_REGDB=y \
-        BR2_PACKAGE_OPENSSL=y BR2_PACKAGE_LIBCURL=y BR2_PACKAGE_LIBCURL_CURL=y \
-        BR2_PACKAGE_LIBCURL_OPENSSL=y BR2_PACKAGE_HTOP=y BR2_PACKAGE_EVTEST=y \
-        BR2_PACKAGE_I2C_TOOLS=y BR2_PACKAGE_LM_SENSORS=y \
-        BR2_PACKAGE_LM_SENSORS_SENSORS=y BR2_PACKAGE_STRACE=y \
-        BR2_TARGET_TZ_INFO=y BR2_PACKAGE_TZDATA=y \
-        BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y \
-        BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y \
-        BR2_PACKAGE_XDRIVER_XF86_INPUT_EVDEV=y \
-        BR2_PACKAGE_ALSA_UTILS_ALSACTL=y BR2_PACKAGE_ALSA_UTILS_AMIXER=y \
-        BR2_PACKAGE_ALSA_UTILS_APLAY=y BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y \
-        BR2_PACKAGE_XAPP_XINPUT=y BR2_PACKAGE_XAPP_XINPUT_CALIBRATOR=y \
-        BR2_PACKAGE_JWM=y BR2_PACKAGE_TRIGGERHAPPY=y \
-        BR2_PACKAGE_XAPP_XCALC=y BR2_PACKAGE_XAPP_XEDIT=y BR2_PACKAGE_XAPP_XSET=y; do
-        require_line "$req" "$cfg" "generated rootfs dropped: $req"
-    done
-    require_line 'BR2_TARGET_GENERIC_ROOT_PASSWD=""' "$cfg" 'generated rootfs does not use a blank root password'
-    require_line 'BR2_PACKAGE_EUDEV=y' "$cfg" 'generated rootfs dropped the libudev dependency required by evdev'
-    require_line '# BR2_PACKAGE_EUDEV_MODULE_LOADING is not set' "$cfg" 'generated rootfs enabled unused eudev module loading'
-    require_line '# BR2_PACKAGE_EUDEV_ENABLE_HWDB is not set' "$cfg" 'generated rootfs enabled the unused eudev hardware database'
-    require_line 'BR2_TARGET_ROOTFS_EXT2_SIZE="128M"' "$cfg" 'generated rootfs seed is not 128 MiB'
-    ;;
-
-image)
-    command -v debugfs >/dev/null 2>&1 || die 'debugfs required for image validation'
-    rootfs="${OUTPUT_DIR}/rootfs.ext2"
-    test -s "$rootfs" || die 'rootfs.ext2 missing'
-    test -s "${OUTPUT_DIR}/kernel-modules.tar" || die 'sealed image lost kernel module bundle'
-    for path in \
-        /usr/bin/htop /usr/bin/evtest /usr/sbin/i2cdetect /usr/bin/sensors \
-        /usr/bin/strace /usr/sbin/iw /usr/bin/curl /usr/bin/kmod /usr/sbin/wpa_supplicant \
-        /usr/sbin/wpa_passphrase /usr/sbin/ntpd /usr/sbin/rx1950-time-sync \
-        /usr/sbin/rx1950-usb-dhcp /usr/bin/amixer /usr/bin/arecord \
-        /usr/sbin/alsactl /usr/bin/speaker-test /usr/bin/xinput \
-        /usr/bin/xinput_calibrator \
-        /usr/bin/jwm /usr/sbin/rx1950-control /usr/sbin/thd \
-        /usr/sbin/rx1950-button-settings \
-        /usr/bin/xcalc /usr/bin/xedit /usr/bin/xset /usr/bin/rx1950-launch \
-        /etc/triggerhappy/triggers.d/rx1950.conf /etc/default/triggerhappy \
-        /etc/default/rx1950-power /etc/jwm/system.jwmrc /etc/jwm/theme \
-        /usr/share/applications/rx1950-calculator.desktop \
-        /usr/share/applications/rx1950-editor.desktop \
-        /usr/sbin/rx1950-timezone /usr/sbin/rx1950-sensors /usr/sbin/rx1950-wlan \
-        /usr/sbin/rx1950-wlan-firmware /usr/sbin/rx1950-blue /etc/default/dropbear \
-        /etc/ssl/certs/ca-certificates.crt /etc/opkg/opkg.conf /sbin/udhcpc \
-        /usr/share/udhcpc/rx1950-usb.script /etc/init.d/S05grow-root \
-        /etc/init.d/S02clock-sanity /etc/init.d/S10kernel-modules \
-        /etc/init.d/S20zram /etc/init.d/S30alsa /etc/init.d/S35usb-gadget \
-        /etc/init.d/S38time-sync /etc/init.d/S40wlan /etc/init.d/S48xserver /etc/init.d/S50jwm \
-        /usr/bin/Xorg /usr/lib/xorg/modules/drivers/fbdev_drv.so \
-        /usr/lib/xorg/modules/input/evdev_drv.so /etc/X11/xorg.conf \
-        /lib/firmware/regulatory.db /lib/firmware/regulatory.db.p7s \
-        /usr/lib/rx1950/build-epoch /usr/lib/rx1950/build-date-utc \
-        /lib/firmware/WLANGEN.BIN \
-        /lib/firmware/RADIO0d.BIN /lib/firmware/RADIO11.BIN; do
-        rootfs_has "$rootfs" "$path" || die "sealed rootfs missing $path"
-    done
-    ;;
-
-*) die 'usage: validate-peripherals.sh {source|kernel [config]|rootfs [config]|image}' ;;
+    source)
+        validate_kernel_config "$KCFG"
+        validate_rootfs_config "$RCFG"
+        validate_source_runtime
+        require_fragment 'XSERVER_XORG_SERVER_DEPENDENCIES += libsha1' "${ROOT_DIR}/buildroot/external/rx1950/external.mk" 'Xorg is not linked to compact libsha1'
+        require_fragment '--with-sha1=libsha1' "${ROOT_DIR}/buildroot/external/rx1950/external.mk" 'Xorg SHA1 backend is not compact libsha1'
+        ;;
+    kernel)
+        cfg="${2:-${OUTPUT_DIR}/kernel.config}"; require_file "$cfg"; validate_kernel_config "$cfg"
+        require_file "${OUTPUT_DIR}/kernel-modules.tar"
+        tar -tf "${OUTPUT_DIR}/kernel-modules.tar" | grep -q '/acx-mac80211\.ko$' || die 'ACX100 module missing from bundle'
+        tar -tf "${OUTPUT_DIR}/kernel-modules.tar" | grep -q '/rx1950_acx\.ko$' || die 'rx1950 ACX glue missing from bundle'
+        ;;
+    rootfs)
+        cfg="${2:-${OUTPUT_DIR}/buildroot.config}"; require_file "$cfg"; validate_rootfs_config "$cfg"
+        target="${ROOT_DIR}/.build/buildroot-output/target"
+        if test -d "$target"; then
+            for p in \
+                usr/bin/Xorg usr/bin/jwm usr/bin/matchbox-keyboard usr/bin/rx1950-settings \
+                usr/bin/pcmanfm usr/bin/leafpad usr/bin/dillo usr/bin/xterm usr/bin/xcalc \
+                usr/bin/xinput usr/bin/xinput_calibrator usr/sbin/iw usr/sbin/wpa_supplicant \
+                usr/sbin/wpa_passphrase usr/sbin/rx1950-control usr/sbin/rx1950-xorg-config; do
+                test -e "$target/$p" || die "built rootfs missing /$p"
+            done
+            test ! -e "$target/usr/bin/dialog" || die 'dialog remains in built rootfs'
+            test ! -e "$target/etc/init.d/S10udev" || die 'resident udev startup remains in built rootfs'
+            test ! -e "$target/etc/X11/xorg.conf" || die 'static Xorg config remains in built rootfs'
+            if command -v readelf >/dev/null 2>&1; then
+                if readelf -d "$target/usr/bin/Xorg" 2>/dev/null | grep -q 'Shared library: \[libcrypto'; then
+                    die 'resident Xorg still links libcrypto instead of libsha1'
+                fi
+            fi
+        fi
+        ;;
+    image)
+        validate_kernel_config "${OUTPUT_DIR}/kernel.config"
+        validate_rootfs_config "${OUTPUT_DIR}/buildroot.config"
+        require_file "${OUTPUT_DIR}/rootfs.ext2"
+        ;;
+    *) die 'usage: validate-peripherals.sh {source|kernel [config]|rootfs [config]|image}' ;;
 esac
+
+printf 'rx1950 peripheral/runtime contract: OK\n'

@@ -1,0 +1,6 @@
+# User-interface defaults. Values are consumed at runtime and may be changed
+# from Settings without rebuilding the image.
+DPI=96
+PANEL_HEIGHT=32
+PANEL_AUTOHIDE=off
+PANEL_TASK_WIDTH=70
