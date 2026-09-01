@@ -1,10 +1,8 @@
 [Desktop Entry]
-Encoding=UTF-8
 Name=Calculator
-Comment=Calculator
-Exec=xcalc
+Exec=rx1950-launch --name calculator xcalc
 Icon=accessories-calculator
 Terminal=false
 Type=Application
-Categories=Utility;
-SingleInstance=True
+Categories=Utility;Calculator;
+X-RX1950-Replaces=xcalc.desktop;

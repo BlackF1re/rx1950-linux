@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Files
+Comment=Browse files and folders
+Exec=rx1950-launch --name files pcmanfm /root
+Icon=system-file-manager
+Terminal=false
+Type=Application
+Categories=System;FileTools;
+X-RX1950-Replaces=pcmanfm.desktop;

@@ -1,88 +1,43 @@
 <?xml version="1.0"?>
 <JWM>
-  <RootMenu onroot="1" height="30">
-    <Menu label="Applications">
-      <Program label="Terminal">rx1950-launch --name terminal mb-applet-xterm-wrapper.sh</Program>
-      <Program label="Text editor">rx1950-launch --name editor xedit</Program>
-      <Program label="Calculator">rx1950-launch --name calculator xcalc</Program>
-    </Menu>
-    <Menu label="Settings">
-      <Program label="Wi-Fi networks">rx1950-wifi-launcher</Program>
-      <Menu label="Brightness">
-        <Program label="20 percent">rx1950-control brightness-set 20</Program>
-        <Program label="40 percent">rx1950-control brightness-set 40</Program>
-        <Program label="60 percent">rx1950-control brightness-set 60</Program>
-        <Program label="80 percent">rx1950-control brightness-set 80</Program>
-        <Program label="100 percent">rx1950-control brightness-set 100</Program>
-      </Menu>
-      <Menu label="Volume">
-        <Program label="Mute">rx1950-control volume-set 0</Program>
-        <Program label="25 percent">rx1950-control volume-set 25</Program>
-        <Program label="50 percent">rx1950-control volume-set 50</Program>
-        <Program label="75 percent">rx1950-control volume-set 75</Program>
-        <Program label="100 percent">rx1950-control volume-set 100</Program>
-        <Program label="Test speaker">rx1950-control audio-test</Program>
-      </Menu>
-      <Menu label="Keyboard">
-        <Program label="Show or hide">rx1950-keyboard toggle</Program>
-        <Program label="English">rx1950-keyboard layout us</Program>
-        <Program label="Russian">rx1950-keyboard layout ru</Program>
-        <Program label="French">rx1950-keyboard layout fr</Program>
-        <Program label="Finnish">rx1950-keyboard layout fi</Program>
-        <Program label="Dvorak">rx1950-keyboard layout dvorak</Program>
-        <Program label="Numbers">rx1950-keyboard layout numpad</Program>
-      </Menu>
-      <Menu label="Screen timeout">
-        <Program label="Never">rx1950-control blank-set 0</Program>
-        <Program label="30 seconds">rx1950-control blank-set 30</Program>
-        <Program label="1 minute">rx1950-control blank-set 60</Program>
-        <Program label="2 minutes">rx1950-control blank-set 120</Program>
-        <Program label="5 minutes">rx1950-control blank-set 300</Program>
-      </Menu>
-      <Menu label="Appearance">
-        <Program label="Classic blue">rx1950-control theme blue</Program>
-        <Program label="Dark">rx1950-control theme dark</Program>
-        <Program label="High contrast">rx1950-control theme contrast</Program>
-      </Menu>
-      <Program label="Hardware buttons">rx1950-launch --name buttons mb-applet-xterm-wrapper.sh -e rx1950-button-settings</Program>
-      <Program label="Calibrate touchscreen">rx1950-launch --name calibration xinput_calibrator</Program>
-      <Program label="Synchronize time">rx1950-control time-sync</Program>
-    </Menu>
-    <Dynamic label="System status">exec:/usr/sbin/rx1950-jwm-status-menu</Dynamic>
+  <!-- Applications are discovered from XDG .desktop files at menu-open time. -->
+  <RootMenu onroot="1" height="32">
+    <Dynamic label="Applications">exec:/usr/bin/rx1950-jwm-app-menu</Dynamic>
     <Separator/>
-    <Menu label="Power">
-      <Program label="Suspend">rx1950-control suspend</Program>
-      <Program label="Restart">rx1950-launch --name power mb-applet-xterm-wrapper.sh -e rx1950-power-menu reboot</Program>
-      <Program label="Power off">rx1950-launch --name power mb-applet-xterm-wrapper.sh -e rx1950-power-menu poweroff</Program>
-    </Menu>
-    <Restart label="Restart interface"/>
+    <Program label="Settings">rx1950-launch --name settings rx1950-settings</Program>
+    <Program label="Wi-Fi">rx1950-launch --name settings rx1950-settings wifi</Program>
+    <Program label="Power / battery">rx1950-launch --name settings rx1950-settings power</Program>
+    <Separator/>
+    <Restart label="Reload desktop"/>
   </RootMenu>
 
-  <RootMenu onroot="2" height="30">
-    <Dynamic>exec:/usr/sbin/rx1950-jwm-status-menu</Dynamic>
-  </RootMenu>
-
+  <!-- PDA-oriented defaults for the programs shipped in the base image. This
+       is window policy, not the application menu; users may edit ~/.jwmrc. -->
   <Group>
     <Name>xterm</Name>
     <Name>xcalc</Name>
-    <Name>xedit</Name>
+    <Name>leafpad</Name>
+    <Name>pcmanfm</Name>
+    <Name>dillo</Name>
+    <Name>rx1950-settings</Name>
     <Name>xinput_calibrator</Name>
     <Option>maximized</Option>
   </Group>
+
   <Group>
     <Name>matchbox-keyboard</Name>
     <Option>layer:above</Option>
+    <Option>nofocus</Option>
+    <Option>nolist</Option>
+    <Option>notitle</Option>
+    <Option>sticky</Option>
   </Group>
 
-  <Tray x="0" y="-1" height="30" autohide="off">
-    <TrayButton label="Start">root:1</TrayButton>
-    <TaskList maxwidth="72"/>
-    <TrayButton label="KB" popup="Keyboard">exec:rx1950-keyboard toggle</TrayButton>
-    <TrayButton label="BAT" popup="Battery and system status">root:2</TrayButton>
-    <Clock format="%H:%M" width="47"><Button mask="123">root:2</Button></Clock>
-  </Tray>
+  <!-- The lower tray is generated from /etc/default/rx1950-ui and can be
+       changed from Settings without rewriting the rest of the JWM config. -->
+  <Include>/root/.config/jwm/panel</Include>
+  <Include>/root/.config/jwm/theme</Include>
 
-  <Include>/etc/jwm/theme</Include>
   <Desktops width="1" height="1">
     <Background type="solid">#d8e8f6</Background>
   </Desktops>
@@ -90,7 +45,7 @@
   <DoubleClickDelta>4</DoubleClickDelta>
   <FocusModel>click</FocusModel>
   <SnapMode distance="8">border</SnapMode>
-  <MoveMode>opaque</MoveMode>
+  <MoveMode>outline</MoveMode>
   <ResizeMode>outline</ResizeMode>
   <Key key="Up">up</Key>
   <Key key="Down">down</Key>

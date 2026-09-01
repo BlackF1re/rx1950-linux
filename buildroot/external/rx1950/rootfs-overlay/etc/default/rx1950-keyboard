@@ -1,1 +1,7 @@
-LAYOUT=us
+# Matchbox Keyboard runtime profile. CONFIG is a basename from
+# /usr/share/matchbox-keyboard and may be replaced by user-installed layouts.
+CONFIG=keyboard.xml
+LANG=en_US
+WIDTH=240
+HEIGHT=116
+FONTPTSIZE=9

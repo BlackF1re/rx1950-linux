@@ -1,0 +1,14 @@
+# Runtime X/input discovery. Empty device overrides mean "discover from sysfs".
+# Paths may be pinned here for debugging without changing the image.
+FRAMEBUFFER=/dev/fb0
+SCREEN_MODE=240x320
+SCREEN_DEPTH=16
+TOUCH_DEVICE=
+KEYBOARD_DEVICE=
+TOUCH_NAME_PATTERN='touch|stylus|s3c.*ts|s3c2410'
+KEYBOARD_NAME_PATTERN='keys|keyboard|button|gpio'
+# Default calibration measured for the rx1950 panel. xinput_calibrator stores
+# an evdev Calibration tuple below when the user performs a fresh calibration.
+TOUCH_MATRIX='-1.285855985 0.008767978 1.134934000 0.002143120 -1.318328347 1.152815066 0 0 1'
+TOUCH_CALIBRATION=
+TOUCH_SWAP_AXES=0

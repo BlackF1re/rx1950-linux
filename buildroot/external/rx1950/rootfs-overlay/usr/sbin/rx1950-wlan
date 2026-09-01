@@ -1,12 +1,6 @@
 #!/bin/sh
-# Control the optional RX1950 ACX100 WLAN modules.
-#
-# The default mode follows the historical RX1950 wiring, including GPA11,
-# which is shared with the visible Blue LED. no-gpa11-power is a diagnostic
-# mode for testing whether this particular device can run the radio without
-# that shared line.
-
-set -u
+# Control the RX1950 ACX100 WLAN stack without assuming a deployment country.
+set -eu
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
 
@@ -15,265 +9,139 @@ DHCP_PIDFILE=/var/run/udhcpc-wlan.pid
 CONF=/etc/wpa_supplicant.conf
 BLUE_TRIGGER=/sys/class/leds/Blue/trigger
 LOCKDIR=/run/rx1950-wlan.lock
-REGDOMAIN=RU
+REGDOMAIN=
+POWER_MODE=historical
 [ ! -r /etc/default/rx1950-wlan ] || . /etc/default/rx1950-wlan
 
 acquire_lock() {
-	mkdir "$LOCKDIR" 2>/dev/null || {
-		printf '%s\n' 'another rx1950-wlan operation is in progress' >&2
-		return 1
-	}
-	trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT HUP INT TERM
+    mkdir "$LOCKDIR" 2>/dev/null || { echo 'another rx1950-wlan operation is in progress' >&2; return 1; }
+    trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT HUP INT TERM
 }
-
 iface() {
-	for n in /sys/class/net/wlan*; do
-		[ -e "$n" ] || continue
-		basename "$n"
-		return 0
-	done
-	return 1
+    for n in /sys/class/net/wlan*; do [ -e "$n" ] && { basename "$n"; return 0; }; done
+    return 1
 }
-
 firmware_ready() {
-	[ -r /lib/firmware/WLANGEN.BIN ] || return 1
-	for f in /lib/firmware/RADIO??.BIN; do
-		[ -r "$f" ] && return 0
-	done
-	return 1
+    [ -r /lib/firmware/WLANGEN.BIN ] || return 1
+    for f in /lib/firmware/RADIO??.BIN; do [ -r "$f" ] && return 0; done
+    return 1
 }
-
 loaded_gpa11_mode() {
-	[ -r /sys/module/rx1950_acx/parameters/gpa11_power ] || return 1
-	cat /sys/module/rx1950_acx/parameters/gpa11_power
+    [ -r /sys/module/rx1950_acx/parameters/gpa11_power ] || return 1
+    cat /sys/module/rx1950_acx/parameters/gpa11_power
 }
-
 prepare_shared_power_trigger() {
-	[ -w "$BLUE_TRIGGER" ] || {
-		printf '%s\n' 'Blue LED trigger control is unavailable; refusing historical GPA11 power mode.' >&2
-		return 1
-	}
-	# The kernel only attaches a newly registered default trigger when the LED
-	# has no active trigger. Detach any userspace-selected trigger before the
-	# rx1950_acx module registers rx1950-acx-mem.
-	printf '%s\n' none > "$BLUE_TRIGGER" || return 1
+    [ -w "$BLUE_TRIGGER" ] || { echo 'Blue LED trigger control unavailable' >&2; return 1; }
+    printf '%s\n' none > "$BLUE_TRIGGER"
 }
-
 verify_shared_power_trigger() {
-	[ -r "$BLUE_TRIGGER" ] || return 1
-	case "$(cat "$BLUE_TRIGGER" 2>/dev/null)" in
-		*'[rx1950-acx-mem]'*) return 0 ;;
-		*)
-			printf '%s\n' 'rx1950-acx-mem did not attach to the shared Blue/GPA11 line.' >&2
-			return 1
-			;;
-	esac
+    [ -r "$BLUE_TRIGGER" ] || return 1
+    case "$(cat "$BLUE_TRIGGER" 2>/dev/null)" in *'[rx1950-acx-mem]'*) return 0 ;; esac
+    echo 'rx1950-acx-mem did not attach to the shared Blue/GPA11 line' >&2
+    return 1
+}
+apply_regdomain() {
+    country=$(printf '%s' "${REGDOMAIN:-}" | tr 'a-z' 'A-Z')
+    [ -n "$country" ] || return 0
+    case "$country" in [A-Z][A-Z]) iw reg set "$country" ;; *) echo "invalid REGDOMAIN: $REGDOMAIN" >&2; return 2 ;; esac
 }
 
 start_radio() {
-	mode=${1:-historical}
-	firmware_ready || {
-		printf '%s\n' 'ACX100 firmware is missing. Run: rx1950-wlan-firmware import  (or fetch)' >&2
-		return 1
-	}
+    mode=${1:-${POWER_MODE:-historical}}
+    firmware_ready || { echo 'ACX100 firmware is missing' >&2; return 1; }
+    case "$mode" in historical|default) requested=Y ;; no-gpa11-power|independent) requested=N ;; *) echo "unknown start mode: $mode" >&2; return 2 ;; esac
 
-	case "$mode" in
-		historical|default) requested=Y ;;
-		no-gpa11-power|independent) requested=N ;;
-		*) printf '%s\n' "unknown start mode: $mode" >&2; return 2 ;;
-	esac
+    if current=$(loaded_gpa11_mode 2>/dev/null); then
+        case "$current" in Y|y|1) current=Y ;; *) current=N ;; esac
+        [ "$current" = "$requested" ] || { echo 'WLAN is loaded with a different GPA11 mode; restart it first' >&2; return 1; }
+    else
+        modprobe acx-mac80211 watchdog=1 || return 1
+        if [ "$requested" = Y ]; then
+            prepare_shared_power_trigger || { modprobe -r acx-mac80211 2>/dev/null || true; return 1; }
+            modprobe rx1950_acx || { modprobe -r acx-mac80211 2>/dev/null || true; return 1; }
+            verify_shared_power_trigger || { modprobe -r rx1950_acx 2>/dev/null || true; modprobe -r acx-mac80211 2>/dev/null || true; return 1; }
+        else
+            echo 'DIAGNOSTIC: starting WLAN without the historical GPA11 power line' >&2
+            modprobe rx1950_acx gpa11_power=0 || { modprobe -r acx-mac80211 2>/dev/null || true; return 1; }
+        fi
+    fi
 
-	if current="$(loaded_gpa11_mode 2>/dev/null)"; then
-		case "$current" in
-			Y|y|1) current=Y ;;
-			*) current=N ;;
-		esac
-		if [ "$current" != "$requested" ]; then
-			printf '%s\n' 'RX1950 WLAN is already loaded in a different GPA11 mode.' >&2
-			printf '%s\n' 'Run rx1950-wlan restart with the desired mode.' >&2
-			return 1
-		fi
-	else
-		modprobe acx-mac80211 watchdog=1 || return 1
-		case "$requested" in
-			Y)
-				# Historical RX1950 sequence: GPA11 is the WLAN power/Blue line.
-				prepare_shared_power_trigger || {
-					modprobe -r acx-mac80211 2>/dev/null || true
-					return 1
-				}
-				modprobe rx1950_acx || {
-					modprobe -r acx-mac80211 2>/dev/null || true
-					return 1
-				}
-				if ! verify_shared_power_trigger; then
-					modprobe -r rx1950_acx 2>/dev/null || true
-					modprobe -r acx-mac80211 2>/dev/null || true
-					return 1
-				fi
-				;;
-			N)
-				printf '%s\n' 'DIAGNOSTIC: WLAN is starting without the historical GPA11 power/Blue line.' >&2
-				modprobe rx1950_acx gpa11_power=0 || {
-					modprobe -r acx-mac80211 2>/dev/null || true
-					return 1
-				}
-				;;
-		esac
-	fi
-
-	attempt=0
-	while [ "$attempt" -lt 20 ]; do
-		ifname="$(iface 2>/dev/null || true)"
-		[ -n "$ifname" ] && break
-		attempt=$((attempt + 1))
-		sleep 1
-	done
-	ifname="$(iface 2>/dev/null || true)"
-	[ -n "$ifname" ] || {
-		printf '%s\n' 'ACX modules loaded but no wlan interface appeared.' >&2
-		printf '%s\n' 'Inspect: dmesg | grep -iE "rx1950-acx|acx|firmware|wlan"' >&2
-		return 1
-	}
-	case "$REGDOMAIN" in
-		[A-Z][A-Z]) iw reg set "$REGDOMAIN" || return 1 ;;
-		*) printf '%s\n' "invalid REGDOMAIN: $REGDOMAIN" >&2; return 1 ;;
-	esac
-	ip link set "$ifname" up
-	# Scanning is an explicit user operation. Forcing it here used to trigger
-	# the ACX watchdog during every boot and then falsely report readiness after
-	# firmware recovery, even when the scan produced no BSS results.
-	printf '%s\n' "WLAN ready: $ifname"
-}
-
-stop_radio() {
-	disconnect_radio
-	if [ -s "$PIDFILE" ]; then
-		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
-		ifname="$(iface 2>/dev/null || true)"
-		[ -z "$ifname" ] || wpa_cli -i "$ifname" terminate >/dev/null 2>&1 || true
-		attempt=0
-		while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$attempt" -lt 5 ]; do
-			sleep 1
-			attempt=$((attempt + 1))
-		done
-		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-		rm -f "$PIDFILE"
-	fi
-	ifname="$(iface 2>/dev/null || true)"
-	if [ -n "$ifname" ]; then
-		ip link set "$ifname" down || return 1
-		sleep 1
-	fi
-	modprobe -r rx1950_acx || return 1
-	modprobe -r acx-mac80211 || return 1
-}
-
-status_radio() {
-	printf '%s\n' '=== modules ==='
-	lsmod | grep -E '(^| )(rx1950_acx|acx_mac80211)( |$)' || true
-	printf '%s\n' '=== wiring mode ==='
-	if current="$(loaded_gpa11_mode 2>/dev/null)"; then
-		case "$current" in
-			Y|y|1) printf '%s\n' 'historical (GPA11 WLAN power / Blue shared)' ;;
-			*) printf '%s\n' 'diagnostic no-gpa11-power' ;;
-		esac
-	else
-		printf '%s\n' 'not loaded'
-	fi
-	printf '%s\n' '=== firmware ==='
-	rx1950-wlan-firmware status
-	printf '%s\n' '=== interface ==='
-	ifname="$(iface 2>/dev/null || true)"
-	if [ -n "$ifname" ]; then
-		ip -details link show "$ifname"
-		iw dev "$ifname" info 2>/dev/null || true
-	else
-		printf '%s\n' 'none'
-	fi
-}
-
-scan_radio() {
-	ifname="$(iface 2>/dev/null || true)"
-	[ -n "$ifname" ] || { printf '%s\n' 'no wlan interface' >&2; return 1; }
-	ip link set "$ifname" up || return 1
-	iw dev "$ifname" scan
-}
-
-connect_radio() {
-	ifname="$(iface 2>/dev/null || true)"
-	[ -n "$ifname" ] || { printf '%s\n' 'no wlan interface' >&2; return 1; }
-	[ -r "$CONF" ] || {
-		printf '%s\n' "create $CONF first (for example with wpa_passphrase)" >&2
-		return 1
-	}
-	if [ -s "$PIDFILE" ]; then
-		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
-		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-	fi
-	if [ -s "$DHCP_PIDFILE" ]; then
-		pid="$(cat "$DHCP_PIDFILE" 2>/dev/null || true)"
-		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-		rm -f "$DHCP_PIDFILE"
-	fi
-	rm -f "$PIDFILE"
-	ip link set "$ifname" up || return 1
-	# ACX100 firmware scanning cannot carry the extra probe-request IEs sent by
-	# modern nl80211 wpa_supplicant. The driver's WEXT compatibility path does
-	# not request those IEs and is verified to associate with WPA2/CCMP.
-	wpa_supplicant -B -D wext -P "$PIDFILE" -i "$ifname" -c "$CONF" || return 1
-	attempt=0
-	while [ "$attempt" -lt 20 ]; do
-		if wpa_cli -i "$ifname" status 2>/dev/null | grep -qx 'wpa_state=COMPLETED'; then
-			break
-		fi
-		attempt=$((attempt + 1))
-		sleep 1
-	done
-	if [ "$attempt" -ge 20 ]; then
-		printf '%s\n' 'Wi-Fi association timed out' >&2
-		disconnect_radio
-		return 1
-	fi
-	# Stay in the foreground and fail after a bounded number of attempts. The
-	# old -b mode left a daemon broadcasting DHCP discovery indefinitely.
-	udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q -t 5 -T 2 -A 5 || {
-		printf '%s\n' 'associated, but DHCP did not provide an address' >&2
-		return 1
-	}
-	if command -v rx1950-time-sync >/dev/null 2>&1 &&
-	   ! pidof rx1950-time-sync >/dev/null 2>&1; then
-		rx1950-time-sync >/dev/null 2>&1 &
-	fi
+    attempt=0
+    while [ "$attempt" -lt 20 ]; do
+        ifname=$(iface 2>/dev/null || true); [ -n "$ifname" ] && break
+        attempt=$((attempt + 1)); sleep 1
+    done
+    ifname=$(iface 2>/dev/null || true)
+    [ -n "$ifname" ] || { echo 'ACX modules loaded but no wlan interface appeared' >&2; return 1; }
+    apply_regdomain
+    ip link set "$ifname" up
+    echo "WLAN ready: $ifname"
 }
 
 disconnect_radio() {
-	ifname="$(iface 2>/dev/null || true)"
-	if [ -s "$DHCP_PIDFILE" ]; then
-		pid="$(cat "$DHCP_PIDFILE" 2>/dev/null || true)"
-		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-	fi
-	rm -f "$DHCP_PIDFILE"
-	if [ -s "$PIDFILE" ]; then
-		pid="$(cat "$PIDFILE" 2>/dev/null || true)"
-		[ -z "$ifname" ] || wpa_cli -i "$ifname" terminate >/dev/null 2>&1 || true
-		[ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-	fi
-	rm -f "$PIDFILE"
-	[ -z "$ifname" ] || ip addr flush dev "$ifname" || true
+    ifname=$(iface 2>/dev/null || true)
+    if [ -s "$DHCP_PIDFILE" ]; then pid=$(cat "$DHCP_PIDFILE" 2>/dev/null || true); [ -z "$pid" ] || kill "$pid" 2>/dev/null || true; fi
+    rm -f "$DHCP_PIDFILE"
+    if [ -s "$PIDFILE" ]; then
+        pid=$(cat "$PIDFILE" 2>/dev/null || true)
+        [ -z "$ifname" ] || wpa_cli -i "$ifname" terminate >/dev/null 2>&1 || true
+        [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+    [ -z "$ifname" ] || ip addr flush dev "$ifname" 2>/dev/null || true
+}
+
+stop_radio() {
+    disconnect_radio
+    ifname=$(iface 2>/dev/null || true)
+    [ -z "$ifname" ] || { ip link set "$ifname" down 2>/dev/null || true; sleep 1; }
+    modprobe -r rx1950_acx 2>/dev/null || true
+    modprobe -r acx-mac80211 2>/dev/null || true
+}
+
+scan_radio() {
+    ifname=$(iface 2>/dev/null || true)
+    [ -n "$ifname" ] || { start_radio; ifname=$(iface); }
+    ip link set "$ifname" up
+    apply_regdomain
+    iw dev "$ifname" scan
+}
+
+connect_radio() {
+    ifname=$(iface 2>/dev/null || true)
+    [ -n "$ifname" ] || { start_radio; ifname=$(iface); }
+    [ -r "$CONF" ] || { echo "missing $CONF" >&2; return 1; }
+    disconnect_radio
+    ip link set "$ifname" up
+    # The ACX100 firmware cannot carry modern nl80211 probe-request IEs; the
+    # driver's WEXT compatibility path is the reliable association backend.
+    wpa_supplicant -B -D wext -P "$PIDFILE" -i "$ifname" -c "$CONF" || return 1
+    attempt=0
+    while [ "$attempt" -lt 20 ]; do
+        wpa_cli -i "$ifname" status 2>/dev/null | grep -qx 'wpa_state=COMPLETED' && break
+        attempt=$((attempt + 1)); sleep 1
+    done
+    [ "$attempt" -lt 20 ] || { echo 'Wi-Fi association timed out' >&2; disconnect_radio; return 1; }
+    udhcpc -i "$ifname" -p "$DHCP_PIDFILE" -n -q -t 5 -T 2 -A 5 || { echo 'associated, but DHCP failed' >&2; return 1; }
+    if command -v rx1950-time-sync >/dev/null 2>&1 && ! pidof rx1950-time-sync >/dev/null 2>&1; then rx1950-time-sync >/dev/null 2>&1 & fi
+}
+
+status_radio() {
+    echo '=== modules ==='; lsmod | grep -E '(^| )(rx1950_acx|acx_mac80211)( |$)' || true
+    echo '=== wiring mode ==='; loaded_gpa11_mode 2>/dev/null || echo 'not loaded'
+    echo '=== regulatory domain ==='; iw reg get 2>/dev/null | sed -n 's/^country \([^:]*\):.*/\1/p' | head -1 || true
+    echo '=== firmware ==='; rx1950-wlan-firmware status
+    echo '=== interface ==='; ifname=$(iface 2>/dev/null || true); [ -z "$ifname" ] && echo none || { ip -details link show "$ifname"; iw dev "$ifname" info 2>/dev/null || true; }
 }
 
 acquire_lock || exit 1
 case "${1:-status}" in
-	start) start_radio "${2:-historical}" ;;
-	stop) stop_radio ;;
-	restart) stop_radio; start_radio "${2:-historical}" ;;
-	status) status_radio ;;
-	scan) scan_radio ;;
-	connect) connect_radio ;;
-	disconnect) disconnect_radio ;;
-	*)
-		printf '%s\n' 'usage: rx1950-wlan {start [historical|no-gpa11-power]|stop|restart [historical|no-gpa11-power]|status|scan|connect|disconnect}' >&2
-		exit 2
-		;;
+    start) start_radio "${2:-${POWER_MODE:-historical}}" ;;
+    stop) stop_radio ;;
+    restart) stop_radio; start_radio "${2:-${POWER_MODE:-historical}}" ;;
+    status) status_radio ;;
+    scan) scan_radio ;;
+    connect) connect_radio ;;
+    disconnect) disconnect_radio ;;
+    *) echo 'usage: rx1950-wlan {start [historical|no-gpa11-power]|stop|restart [mode]|status|scan|connect|disconnect}' >&2; exit 2 ;;
 esac

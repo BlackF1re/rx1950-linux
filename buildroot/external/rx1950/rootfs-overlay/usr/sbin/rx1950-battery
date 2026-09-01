@@ -1,0 +1,131 @@
+#!/bin/sh
+# Present the legacy s3c-adc-battery power_supply data in useful units.
+# The kernel exposes charge_now/full_design rather than the modern capacity
+# property, so derive the displayed percentage from those values.
+
+set -u
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+battery_dir() {
+    if [ -d /sys/class/power_supply/main-battery ]; then
+        printf '%s\n' /sys/class/power_supply/main-battery
+        return 0
+    fi
+    for d in /sys/class/power_supply/*; do
+        [ -r "$d/type" ] || continue
+        [ "$(cat "$d/type" 2>/dev/null)" = Battery ] || continue
+        case "$(basename "$d")" in backup-battery) continue ;; esac
+        printf '%s\n' "$d"
+        return 0
+    done
+    return 1
+}
+
+read_prop() {
+    [ -r "$1/$2" ] || return 1
+    cat "$1/$2" 2>/dev/null
+}
+
+percent() {
+    d=$1
+    if value=$(read_prop "$d" capacity 2>/dev/null); then
+        case "$value" in ''|*[!0-9]*) ;; *)
+            [ "$value" -le 100 ] || value=100
+            printf '%s\n' "$value"
+            return 0
+        esac
+    fi
+    now=$(read_prop "$d" charge_now 2>/dev/null || true)
+    full=$(read_prop "$d" charge_full_design 2>/dev/null || true)
+    case "$now:$full" in
+        *[!0-9:]*|:|*:0) return 1 ;;
+    esac
+    value=$((now * 100 / full))
+    [ "$value" -ge 0 ] || value=0
+    [ "$value" -le 100 ] || value=100
+    printf '%s\n' "$value"
+}
+
+format_voltage() {
+    uv=$1
+    case "$uv" in ''|*[!0-9]*) return 1 ;; esac
+    mv=$((uv / 1000))
+    printf '%d.%03d V\n' $((mv / 1000)) $((mv % 1000))
+}
+
+format_current() {
+    ua=$1
+    case "$ua" in
+        -*) sign=-; ua=${ua#-} ;;
+        *) sign= ;;
+    esac
+    case "$ua" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s%d mA\n' "$sign" $((ua / 1000))
+}
+
+external_power() {
+    if [ -r /sys/class/power_supply/ac/online ]; then
+        cat /sys/class/power_supply/ac/online
+        return 0
+    fi
+    for d in /sys/class/power_supply/*; do
+        [ -r "$d/type" ] || continue
+        case "$(cat "$d/type" 2>/dev/null)" in Mains|USB|USB_*)
+            [ -r "$d/online" ] && { cat "$d/online"; return 0; }
+            ;;
+        esac
+    done
+    return 1
+}
+
+b=$(battery_dir 2>/dev/null || true)
+[ -n "$b" ] || {
+    case "${1:-summary}" in
+        summary) printf '%s\n' 'Battery unavailable' ;;
+        info) printf '%s\n' 'Battery telemetry is unavailable.' ;;
+        *) exit 1 ;;
+    esac
+    exit 0
+}
+
+status=$(read_prop "$b" status 2>/dev/null || printf Unknown)
+pct=$(percent "$b" 2>/dev/null || true)
+voltage_raw=$(read_prop "$b" voltage_now 2>/dev/null || true)
+voltage=$(format_voltage "$voltage_raw" 2>/dev/null || true)
+current_raw=$(read_prop "$b" current_now 2>/dev/null || true)
+current=$(format_current "$current_raw" 2>/dev/null || true)
+ac=$(external_power 2>/dev/null || true)
+
+case "${1:-summary}" in
+    summary)
+        if [ -n "$pct" ]; then
+            printf '%s%% · %s' "$pct" "$status"
+        else
+            printf '%s' "$status"
+        fi
+        [ -z "$voltage" ] || printf ' · %s' "$voltage"
+        printf '\n'
+        ;;
+    percent)
+        [ -n "$pct" ] || exit 1
+        printf '%s\n' "$pct"
+        ;;
+    info)
+        case "$ac" in 1) printf 'External power: connected\n' ;; 0) printf 'External power: disconnected\n' ;; *) printf 'External power: unknown\n' ;; esac
+        printf 'Status: %s\n' "$status"
+        if [ -n "$pct" ]; then
+            printf 'Charge estimate: %s%%\n' "$pct"
+        else
+            printf 'Charge estimate: unavailable\n'
+        fi
+        [ -z "$voltage" ] || printf 'Voltage: %s\n' "$voltage"
+        [ -z "$current" ] || printf 'Current: %s\n' "$current"
+        # Accuracy follows the legacy board ADC/LUT calibration. Keep raw
+        # values visible so physical calibration can be audited later.
+        [ -z "$voltage_raw" ] || printf 'Raw voltage_now: %s uV\n' "$voltage_raw"
+        [ -z "$current_raw" ] || printf 'Raw current_now: %s uA\n' "$current_raw"
+        ;;
+    status) printf '%s\n' "$status" ;;
+    *) printf 'usage: rx1950-battery {summary|percent|info|status}\n' >&2; exit 2 ;;
+esac

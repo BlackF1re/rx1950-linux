@@ -1,26 +1,49 @@
 #!/bin/sh
-# Start Xorg directly on the S3C framebuffer with evdev touch and keys.
+# Start exactly one Xorg instance on the S3C framebuffer.
 
 PIDFILE=/run/Xorg.pid
 LOGFILE=/tmp/Xorg.log
+CONFIG=/run/rx1950/xorg.conf
+DPI=96
+[ ! -r /etc/default/rx1950-ui ] || . /etc/default/rx1950-ui
+case "$DPI" in ''|*[!0-9]*) DPI=96 ;; esac
+[ "$DPI" -ge 60 ] 2>/dev/null && [ "$DPI" -le 200 ] 2>/dev/null || DPI=96
+
+running_pid() {
+    if [ -s "$PIDFILE" ]; then
+        pid=$(cat "$PIDFILE" 2>/dev/null || true)
+        [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && { printf '%s\n' "$pid"; return 0; }
+    fi
+    pid=$(pidof Xorg 2>/dev/null | awk '{print $1}')
+    [ -n "$pid" ] || return 1
+    printf '%s\n' "$pid"
+}
 
 case "${1:-start}" in
     start)
-        [ -c /dev/fb0 ] || exit 0
         command -v Xorg >/dev/null 2>&1 || {
             echo 'Xorg is missing from the root filesystem' >&2
             exit 1
         }
+        if pid=$(running_pid 2>/dev/null); then
+            printf '%s\n' "$pid" > "$PIDFILE"
+            exit 0
+        fi
+        if ! /usr/sbin/rx1950-xorg-config "$CONFIG" 2>>"$LOGFILE"; then
+            echo 'cannot generate Xorg hardware configuration' >&2
+            exit 1
+        fi
         mkdir -p /tmp/.X11-unix
-        rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
-        Xorg :0 -config /etc/X11/xorg.conf -nolisten tcp -noreset \
-            >"$LOGFILE" 2>&1 &
-        echo $! > "$PIDFILE"
+        rm -f "$PIDFILE" /tmp/.X0-lock /tmp/.X11-unix/X0
+        Xorg :0 -config "$CONFIG" -dpi "$DPI" -nolisten tcp -noreset >"$LOGFILE" 2>&1 &
+        pid=$!
+        printf '%s\n' "$pid" > "$PIDFILE"
         ;;
     stop)
-        if [ -s "$PIDFILE" ]; then
-            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+        if pid=$(running_pid 2>/dev/null); then
+            kill "$pid" 2>/dev/null || true
         fi
-        rm -f "$PIDFILE"
+        killall Xorg 2>/dev/null || true
+        rm -f "$PIDFILE" /tmp/.X0-lock /tmp/.X11-unix/X0 "$CONFIG"
         ;;
 esac

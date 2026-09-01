@@ -1,0 +1,14 @@
+config BR2_PACKAGE_RX1950_SETTINGS
+	bool "rx1950-settings"
+	depends on BR2_PACKAGE_XORG7
+	depends on BR2_USE_WCHAR # libglib2
+	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
+	depends on BR2_USE_MMU # libglib2
+	depends on BR2_INSTALL_LIBSTDCPP # libgtk2 -> pango
+	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # libgtk2 -> pango -> harfbuzz
+	select BR2_PACKAGE_LIBGTK2
+	help
+	  Touch-oriented, on-demand GTK2 control center for rx1950-linux.
+	  It configures Wi-Fi, display, sound, JWM appearance, the on-screen
+	  keyboard, hardware buttons, power, time and touchscreen calibration.
+	  No settings daemon remains resident after the application is closed.
